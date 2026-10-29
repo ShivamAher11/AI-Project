@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,9 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# Celery's prefork child may not retain the repository root on sys.path.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 RULES_DIR = ROOT / "rules" / "rules_v1.0"
 WEIGHTS_PATH = ROOT / "rules" / "scoring_weights_v1.0.json"
 RULES_VERSION = "1.0"
@@ -106,8 +110,7 @@ def _make_evidence(normalized: dict) -> tuple[dict, dict[str, list[str]]]:
         catalog[ref] = {"source_type": "import", "source_key": [row.get("library"), row["name"], row.get("address")], "excerpt": row["name"], "offset": row.get("address"), "reason": "Imported API matched a deterministic rule."}
         imports_by_name[row["name"].casefold()].append(ref)
     for row in normalized["strings"]:
-        key = json.dumps([row["offset"], row["value"]], separators=(",", ":"), ensure_ascii=False)
-        ref = "STR-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+        ref = _string_ref(row)
         catalog[ref] = {"source_type": "string", "source_key": [row["offset"], row["value"]], "excerpt": row["value"][:500], "offset": row["offset"], "reason": "Extracted string matched a deterministic rule."}
     for row in normalized["functions"]:
         for api, refs in imports_by_name.items():
@@ -124,6 +127,11 @@ def _make_evidence(normalized: dict) -> tuple[dict, dict[str, list[str]]]:
         for ref in refs:
             catalog[ref]["function_ids"] = sorted(functions_by_api[api])
     return catalog, {key: sorted(value) for key, value in functions_by_api.items()}
+
+
+def _string_ref(row: dict) -> str:
+    key = json.dumps([row["offset"], row["value"]], separators=(",", ":"), ensure_ascii=False)
+    return "STR-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def _attack_allowed() -> dict[str, str]:
@@ -143,7 +151,7 @@ def detect_analysis(normalized: dict) -> dict:
     weights = json.loads(WEIGHTS_PATH.read_text(encoding="utf-8"))
     evidence, functions_by_api = _make_evidence(normalized)
     distances = _distance_map(normalized["edges"])
-    strings = [(f"STR{i + 1}", row["value"], row) for i, row in enumerate(normalized["strings"])]
+    strings = [(_string_ref(row), row["value"], row) for row in normalized["strings"]]
     function_text = {row["id"]: "\n".join((row.get("decompiled_excerpt") or "", row.get("assembly_excerpt") or "")) for row in normalized["functions"]}
     signals: list[dict] = []
     raw_rules: dict[str, list[dict]] = {}
@@ -179,7 +187,7 @@ def detect_analysis(normalized: dict) -> dict:
         for index, (funcs, refs, label) in enumerate(entries, 1):
             if not refs:
                 continue
-            sid = f"S-{rule['id']}-{index:02d}"
+            sid = f"S-{normalized['analysis_id']}-{rule['id']}-{index:02d}"
             signal = {"signal_id": sid, "rule_id": rule["id"], "function_ids": funcs, "evidence_refs": sorted(set(refs))}
             signals.append(signal); rule_signals.append(signal)
         raw_rules[rule["id"]] = rule_signals
@@ -206,7 +214,7 @@ def detect_analysis(normalized: dict) -> dict:
         matched_names = [evidence[r]["excerpt"].casefold() for r in refs if r in evidence]
         for alias, candidates in alias_sets.items():
             if any(any(candidate == name or candidate in name for candidate in candidates) for name in matched_names):
-                current = alias_acc.setdefault(alias, {"signal_id": f"S-{alias}", "rule_id": alias, "function_ids": [], "evidence_refs": []})
+                current = alias_acc.setdefault(alias, {"signal_id": f"S-{normalized['analysis_id']}-{alias}", "rule_id": alias, "function_ids": [], "evidence_refs": []})
                 current["function_ids"] = sorted(set(current["function_ids"]) | set(signal["function_ids"]))
                 current["evidence_refs"] = sorted(set(current["evidence_refs"]) | set(signal["evidence_refs"]))
     api_signals.extend(alias_acc[key] for key in sorted(alias_acc))
@@ -318,7 +326,7 @@ def detect_analysis(normalized: dict) -> dict:
                 continue
             if tid == "T1071.001" and not any(ref.startswith("STR") and re.search(r"https?://|www\\.", evidence.get(ref, {}).get("excerpt", ""), re.I) for ref in hit.evidence_refs):
                 continue
-            if tid == "T1105" and hit.rule_id == "G_DOWNLOAD" and "S-FILE_WRITE" not in hit.signal_ids:
+            if tid == "T1105" and hit.rule_id == "G_DOWNLOAD" and not any(signal_id.endswith("-FILE_WRITE") for signal_id in hit.signal_ids):
                 continue
             if tid == "T1003" and not (any(ref.startswith("I") for ref in hit.evidence_refs) and any(re.search(r"OpenProcessToken|CredEnumerate|LsaEnumerate|lsass|sam\\\\", evidence.get(ref, {}).get("excerpt", ""), re.I) for ref in hit.evidence_refs)):
                 continue

@@ -91,6 +91,9 @@ def test_full_normalized_fixture_correlates_one_injection_and_registry():
     groups = [finding["rule_id"] for finding in result["findings"] if finding["rule_id"].startswith("G_")]
     assert groups.count("G_INJECTION") == 1
     assert groups.count("G_REG_PERSIST") == 1
+    catalog = result["evidence"]
+    assert all(ref in catalog for signal in result["signals"] for ref in signal["evidence_refs"])
+    assert all(ref in catalog for finding in result["findings"] for ref in finding["evidence_refs"])
 
 
 def test_detection_output_fits_normalized_schema_and_is_byte_stable():
