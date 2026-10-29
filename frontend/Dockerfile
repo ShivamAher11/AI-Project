@@ -1,8 +1,10 @@
 FROM node:22.13.1-alpine AS build
-WORKDIR /frontend
-COPY package*.json ./
+WORKDIR /workspace/frontend
+COPY frontend/package*.json ./
 RUN npm ci
-COPY . .
+COPY frontend/ ./
+COPY fixtures/analysis-full.json /workspace/fixtures/analysis-full.json
+COPY fixtures/analysis-partial.json /workspace/fixtures/analysis-partial.json
 RUN npm run build
 
 FROM nginx:1.27.4-alpine
