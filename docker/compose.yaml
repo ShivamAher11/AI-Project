@@ -3,6 +3,9 @@ services:
     build:
       context: ..
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_USE_FIXTURES: ${VITE_USE_FIXTURES:-false}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
     ports:
       - "3000:80"
     depends_on:

@@ -3,7 +3,7 @@ import partialFixture from "../../../fixtures/analysis-partial.json";
 
 const viteEnv = import.meta.env ?? {};
 export const API_BASE = viteEnv.VITE_API_URL ?? "http://localhost:8000/api/v1";
-// Fixture mode defaults on until the overview endpoint lands in Prompt 8.
+// Fixture mode remains available for local demos; Docker builds default to the real API.
 export const USE_FIXTURES = viteEnv.VITE_USE_FIXTURES !== "false";
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
@@ -31,10 +31,11 @@ export interface FindingView {
   observed: string;
   interpretation: string;
   alternative: string;
-  evidence: string[];
+  attackMappings: Array<{ techniqueId: string; name: string; label: "Likely" | "Possible" }>;
+  evidence: Array<{ id: string; sourceType: string; sourceId: string; excerpt: string; offsetOrAddress: string | null; reason: string }>;
 }
 
-export interface RiskLine { label: string; points: number; absorbed: boolean }
+export interface RiskLine { title: string; weight: number }
 
 export interface OverviewView {
   id: string;
@@ -43,12 +44,12 @@ export interface OverviewView {
   progress: number;
   decompStatus: StatusSnapshot["decomp_status"];
   aiStatus: StatusSnapshot["ai_status"];
-  source: "fixture" | "real" | "none";
+  source: "fixture" | "ghidra" | "none";
   file: { name: string; size: number; format: string; arch: string; bitness: number | null; entry: string | null; sha256: string; md5: string; extensionMismatch: boolean };
   counts: { sections: number; imports: number; strings: number; functions: number; findings: number };
   risk: { score: number; rating: Severity; breakdown: RiskLine[] };
   findings: FindingView[];
-  versions: { lief: string; ghidra: string; jdk: string; capstone: string; scoring: string; rules: string; prompts: string };
+  versions: { scoring: string; rules: string; schema: string };
 }
 
 type NormalizedFixture = typeof fullFixture;
@@ -85,15 +86,15 @@ function fixtureOverview(id: string): OverviewView {
         : "Registry imports and a CurrentVersion\\Run key string occur in the static input.",
       interpretation: "Behaviorally suspicious pattern; this heuristic is not a verdict.",
       alternative: "These APIs can also appear in debugging, administration, or installer code.",
-      evidence: hit?.evidence_refs ?? [],
+      attackMappings: groupId === "G_INJECTION" ? [{ techniqueId: "T1055", name: "Process Injection", label: "Likely" as const }] : groupId === "G_REG_PERSIST" ? [{ techniqueId: "T1547.001", name: "Registry Run", label: "Likely" as const }] : [],
+      evidence: (hit?.evidence_refs ?? []).map((ref, index) => ({ id: `E${index + 1}`, sourceType: ref.split(":")[0] ?? "rule", sourceId: ref, excerpt: ref, offsetOrAddress: null, reason: "Matched by the current rule set." })),
     };
   });
   const breakdown = data.rule_hits.filter((hit) => !hit.absorbed).map((hit) => ({
-    label: hit.rule_id,
-    points: Math.max(0, hit.weight),
-    absorbed: Boolean(hit.absorbed),
+    title: hit.rule_id,
+    weight: Math.max(0, hit.weight),
   }));
-  const score = Math.min(100, breakdown.reduce((sum, row) => sum + row.points, 0));
+  const score = Math.min(100, breakdown.reduce((sum, row) => sum + row.weight, 0));
   const partial = data.status === "PARTIAL";
   return {
     id,
@@ -117,7 +118,7 @@ function fixtureOverview(id: string): OverviewView {
     counts: { sections: data.sections.length, imports: data.imports.length, strings: data.strings.length, functions: data.functions.length, findings: findings.length },
     risk: { score, rating: ratingFor(score), breakdown },
     findings,
-    versions: { ...data.toolchain, ...data.versions },
+    versions: { scoring: String(data.versions.scoring), rules: String(data.versions.rules), schema: "1.0" },
   };
 }
 
@@ -156,23 +157,40 @@ export async function getOverview(id: string): Promise<OverviewView> {
     await new Promise((resolve) => window.setTimeout(resolve, 180));
     return fixtureOverview(id);
   }
-  const [statusResponse, staticResponse] = await Promise.all([
-    fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/status`),
-    fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/static`),
-  ]);
-  if (!statusResponse.ok || !staticResponse.ok) throw new Error("Could not load this analysis.");
-  const status = await statusResponse.json() as StatusSnapshot;
-  const data = await staticResponse.json();
-  const emptyScore = 0;
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/overview`);
+  if (!response.ok) throw new Error("Could not load this analysis.");
+  const data = await response.json();
   return {
-    id, status: status.status, stage: status.stage, progress: status.progress,
-    decompStatus: status.decomp_status, aiStatus: status.ai_status,
-    source: data.source ?? "none",
-    file: { name: data.file.original_filename ?? "Uploaded binary", size: data.file.size, format: data.file.format?.toUpperCase() ?? "UNKNOWN", arch: data.file.arch, bitness: data.file.bitness, entry: data.file.entry_point, sha256: data.file.sha256, md5: data.file.md5, extensionMismatch: data.file.extension_mismatch },
-    counts: { sections: data.sections.length, imports: data.imports.length, strings: data.strings.length, functions: data.functions.length, findings: 0 },
-    risk: { score: emptyScore, rating: "Low", breakdown: [] }, findings: [],
-    versions: { lief: "1.0.0", ghidra: "NOT_RUN", jdk: "NOT_RUN", capstone: "NOT_RUN", scoring: "1.0", rules: "1.0", prompts: "1.0" },
+    id, status: data.states.status, stage: data.states.status, progress: ["COMPLETED", "PARTIAL"].includes(data.states.status) ? 100 : 0,
+    decompStatus: data.states.decomp_status, aiStatus: data.states.ai_status,
+    source: data.states.source,
+    file: { name: data.file.filename, size: data.file.size, format: data.file.format?.toUpperCase() ?? "UNKNOWN", arch: data.file.arch, bitness: null, entry: data.file.entry_point, sha256: data.hashes.sha256, md5: data.hashes.md5, extensionMismatch: false },
+    counts: data.counts,
+    risk: { score: data.risk.score ?? 0, rating: (data.risk.rating ? String(data.risk.rating).slice(0, 1).toUpperCase() + String(data.risk.rating).slice(1).toLowerCase() : ratingFor(data.risk.score ?? 0)) as Severity, breakdown: (data.risk.breakdown ?? []).map((line: { title: string; weight: number }) => ({ title: line.title, weight: line.weight })) },
+    findings: (data.top_findings ?? []).map(mapFinding),
+    versions: data.versions,
   };
+}
+
+export async function getFindings(id: string): Promise<FindingView[]> {
+  if (USE_FIXTURES) return fixtureOverview(id).findings;
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/findings`);
+  if (!response.ok) throw new Error("Could not load findings.");
+  const data = await response.json();
+  return (data.items ?? []).map(mapFinding);
+}
+
+function mapFinding(finding: any): FindingView {
+  return { id: finding.id, groupId: finding.group_id ?? finding.type ?? "RULE", title: finding.title,
+    severity: (String(finding.severity).slice(0, 1).toUpperCase() + String(finding.severity).slice(1).toLowerCase()) as Severity,
+    confidence: ({ low: "LOW", medium: "MED", high: "HIGH" } as Record<string, Confidence>)[String(finding.confidence).toLowerCase()] ?? "LOW",
+    weight: finding.score_contribution ?? finding.weight ?? 0, observed: finding.description,
+    interpretation: finding.interpretation ?? "Behaviorally suspicious pattern; heuristic, not a verdict.",
+    alternative: finding.alternative_explanation ?? finding.alternative ?? "There may be a benign explanation.",
+    attackMappings: (finding.attack_mappings ?? []).map((item: any) => ({ techniqueId: item.technique_id, name: item.name, label: item.label })),
+    evidence: (finding.evidence ?? []).map((item: any, index: number) => typeof item === "string"
+      ? ({ id: `E${index + 1}`, sourceType: item.split(":")[0] ?? "rule", sourceId: item, excerpt: item, offsetOrAddress: null, reason: "Matched by the current rule set." })
+      : ({ id: item.id, sourceType: item.source_type, sourceId: item.source_id, excerpt: item.excerpt, offsetOrAddress: item.offset_or_address, reason: item.reason ?? "Evidence supporting this finding." })) };
 }
 
 export async function getStatus(id: string): Promise<StatusSnapshot> {

@@ -14,7 +14,7 @@ function LoadingSkeleton() {
   </div>;
 }
 
-export function OverviewPage({ analysisId }: { analysisId: string }) {
+export function OverviewPage({ analysisId, navigate }: { analysisId: string; navigate: (to: string) => void }) {
   const [overview, setOverview] = useState<OverviewView | null>(null);
   const [status, setStatus] = useState<StatusSnapshot | null>(null);
   const [lastEvent, setLastEvent] = useState<AnalysisEvent | null>(null);
@@ -46,7 +46,7 @@ export function OverviewPage({ analysisId }: { analysisId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId]);
 
-  if (error) return <div className="error-panel" role="alert"><h1>Overview unavailable</h1><p>{error}</p><p>The overview endpoint will be connected to the API in Prompt 8.</p></div>;
+  if (error) return <div className="error-panel" role="alert"><h1>Overview unavailable</h1><p>{error}</p></div>;
   if (!overview || !status) return <LoadingSkeleton />;
 
   const live = { ...overview, ...status, decompStatus: status.decomp_status ?? overview.decompStatus, aiStatus: status.ai_status ?? overview.aiStatus };
@@ -75,19 +75,17 @@ export function OverviewPage({ analysisId }: { analysisId: string }) {
     </div>
 
     <section className="panel findings-panel">
-      <div className="panel-heading"><div><div className="eyebrow">RULE-BASED INDICATORS</div><h2>Top findings <span className="count-chip">{overview.findings.length}</span></h2></div><span className="meta-copy">Ordered by deterministic score contribution</span></div>
+      <div className="panel-heading"><div><div className="eyebrow">RULE-BASED INDICATORS</div><h2>Top findings <span className="count-chip">{overview.counts.findings}</span></h2></div><button className="text-button" onClick={() => navigate(`/analyses/${encodeURIComponent(analysisId)}/findings`)}>View all findings</button></div>
       {overview.findings.length
-        ? <div className="finding-list">{overview.findings.slice(0, 5).map((finding) => <FindingCard key={finding.id} finding={finding} />)}</div>
+        ? <div className="finding-list">{overview.findings.slice(0, 5).map((finding) => <div className="finding-link" key={finding.id} role="link" tabIndex={0} onClick={() => navigate(`/analyses/${encodeURIComponent(analysisId)}/findings`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(`/analyses/${encodeURIComponent(analysisId)}/findings`); }}><FindingCard finding={finding} /></div>)}</div>
         : <div className="empty-state"><span className="empty-icon" aria-hidden="true">—</span><strong>No indicators by current rule set.</strong><span>Does not prove benign.</span></div>}
     </section>
 
     <section className="panel provenance-panel">
       <div className="panel-heading"><div><div className="eyebrow">PROVENANCE</div><h2>Versions and counts</h2></div><span className="fixture-source">source: {overview.source}</span></div>
       <div className="provenance-grid">
-        <Version label="LIEF" value={overview.versions.lief} /><Version label="Ghidra" value={overview.versions.ghidra} />
-        <Version label="JDK" value={overview.versions.jdk} /><Version label="Capstone" value={overview.versions.capstone} />
         <Version label="Scoring" value={overview.versions.scoring} /><Version label="Rules" value={overview.versions.rules} />
-        <Version label="Prompts" value={overview.versions.prompts} />
+        <Version label="Schema" value={overview.versions.schema} />
       </div>
       <div className="counts-row"><span>{overview.counts.functions} functions</span><span>{overview.counts.findings} findings</span><span>{overview.counts.imports} imports</span></div>
     </section>

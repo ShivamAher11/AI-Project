@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
@@ -108,6 +108,30 @@ def _get_analysis(session: Session, analysis_id: uuid.UUID) -> Analysis:
 
 def _address_order(value: str | None) -> tuple[bool, int]:
     return (value is None, int(value, 16) if value else 0)
+
+
+def _finding_card(session: Session, row: Finding) -> dict:
+    evidence = sorted(session.scalars(select(Evidence).where(Evidence.finding_id == row.id)),
+                      key=lambda item: (item.source_type, item.source_id, str(item.id)))
+    mappings = sorted(session.scalars(select(AttackMapping).where(AttackMapping.finding_id == row.id)),
+                      key=lambda item: item.technique_id)
+    return {
+        "id": str(row.id), "title": row.title, "severity": row.severity.title(),
+        "confidence": row.confidence, "confidence_score": row.confidence_score,
+        "description": row.description, "alternative_explanation": row.alternative,
+        "score_contribution": row.score_contribution, "group_id": row.group_id,
+        "attack_mappings": [
+            {"technique_id": item.technique_id, "name": item.technique_name,
+             "label": "Likely" if item.confidence_score >= 0.8 else "Possible",
+             "confidence_score": item.confidence_score}
+            for item in mappings if item.confidence_score >= 0.5
+        ],
+        "evidence": [
+            {"id": str(item.id), "source_type": item.source_type, "source_id": item.source_id,
+             "excerpt": item.excerpt, "offset_or_address": item.offset_or_address, "reason": item.reason}
+            for item in evidence
+        ],
+    }
 
 
 @router.post(
@@ -296,29 +320,44 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
         }
 
 
+@router.get("/{analysis_id}/overview")
+def analysis_overview(analysis_id: uuid.UUID):
+    with new_session() as session:
+        analysis = _get_analysis(session, analysis_id)
+        findings = list(session.scalars(
+            select(Finding).where(Finding.analysis_id == analysis_id)
+            .order_by(Finding.score_contribution.desc(), Finding.group_id.asc().nulls_last(), Finding.id.asc())
+        ))
+        counts = {
+            "sections": session.scalar(select(func.count()).select_from(Section).where(Section.analysis_id == analysis_id)) or 0,
+            "imports": session.scalar(select(func.count()).select_from(ImportSymbol).where(ImportSymbol.analysis_id == analysis_id)) or 0,
+            "strings": session.scalar(select(func.count()).select_from(StringRecord).where(StringRecord.analysis_id == analysis_id)) or 0,
+            "functions": session.scalar(select(func.count()).select_from(Function).where(Function.analysis_id == analysis_id)) or 0,
+            "findings": len(findings),
+        }
+        return {
+            "file": {"filename": analysis.original_filename, "format": analysis.format, "arch": analysis.arch,
+                     "size": analysis.file_size, "entry_point": analysis.entry_point},
+            "hashes": {"sha256": analysis.sha256, "md5": analysis.md5},
+            "risk": {"score": analysis.risk_score, "rating": analysis.risk_rating,
+                     "breakdown": analysis.scoring_breakdown or []},
+            "top_findings": [_finding_card(session, item) for item in findings[:5]],
+            "counts": counts,
+            "versions": {"scoring": analysis.scoring_version, "rules": analysis.rule_set_version,
+                         "schema": analysis.schema_version},
+            "states": {"status": analysis.status, "decomp_status": analysis.decomp_status,
+                        "ai_status": analysis.ai_status,
+                        "source": "fixture" if analysis.ghidra_source == "fixture" else "ghidra"},
+        }
+
+
 @router.get("/{analysis_id}/findings")
 def analysis_findings(analysis_id: uuid.UUID):
     with new_session() as session:
         _get_analysis(session, analysis_id)
         rows = list(session.scalars(select(Finding).where(Finding.analysis_id == analysis_id)))
-        result = []
-        for row in sorted(rows, key=lambda item: (-item.score_contribution, item.group_id or item.type, str(item.id))):
-            evidence = sorted(session.scalars(select(Evidence).where(Evidence.finding_id == row.id)),
-                              key=lambda item: (item.source_type, item.source_id, str(item.id)))
-            mappings = sorted(session.scalars(select(AttackMapping).where(AttackMapping.finding_id == row.id)),
-                              key=lambda item: item.technique_id)
-            result.append({"id": str(row.id), "type": row.type, "group_id": row.group_id, "title": row.title,
-                "severity": row.severity, "confidence": row.confidence, "confidence_score": row.confidence_score,
-                "description": row.description, "interpretation": row.interpretation, "alternative": row.alternative,
-                "score_contribution": row.score_contribution, "signal_ids": row.signal_ids,
-                "evidence": [{"id": str(item.id), "source_type": item.source_type, "source_id": item.source_id,
-                    "excerpt": item.excerpt, "offset_or_address": item.offset_or_address, "reason": item.reason}
-                    for item in evidence],
-                "attack_mappings": [{"technique_id": item.technique_id, "technique_name": item.technique_name,
-                    "confidence": item.confidence, "confidence_score": item.confidence_score,
-                    "label": "Likely" if item.confidence_score >= 0.8 else "Possible" if item.confidence_score >= 0.5 else None,
-                    "display": item.confidence_score >= 0.5, "rationale": item.rationale} for item in mappings]})
-        return {"items": result}
+        rows.sort(key=lambda item: (-item.score_contribution, item.group_id or item.type, str(item.id)))
+        return {"items": [_finding_card(session, row) for row in rows]}
 
 
 @router.get("/{analysis_id}/functions")

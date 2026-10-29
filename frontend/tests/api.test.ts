@@ -7,7 +7,7 @@ Object.defineProperty(globalThis, "window", {
   value: { setTimeout: (callback: () => void) => globalThis.setTimeout(callback, 0) },
 });
 
-test("fixture switch defaults on until overview API is ready", () => {
+test("fixture switch defaults on for local preview", () => {
   assert.equal(USE_FIXTURES, true);
 });
 
@@ -17,7 +17,7 @@ test("full fixture builds a deterministic score, breakdown and finding list", as
   assert.equal(overview.source, "fixture");
   assert.equal(overview.risk.score, 40);
   assert.equal(overview.risk.rating, "Medium");
-  assert.deepEqual(overview.risk.breakdown.map(({ label, points }) => [label, points]), [
+  assert.deepEqual(overview.risk.breakdown.map(({ title, weight }) => [title, weight]), [
     ["G_INJECTION", 25], ["G_REG_PERSIST", 15],
   ]);
   assert.equal(overview.findings.length, 2);
