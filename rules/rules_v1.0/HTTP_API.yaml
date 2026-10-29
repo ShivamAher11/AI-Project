@@ -1,0 +1,28 @@
+{
+  "id": "HTTP_API",
+  "name": "HTTP client API",
+  "category": "network",
+  "severity": "medium",
+  "weight": 5,
+  "attack_technique": "T1071.001",
+  "apis": [
+    "WinHttpOpen",
+    "WinHttpConnect",
+    "WinHttpOpenRequest",
+    "WinHttpSendRequest",
+    "HttpSendRequestA",
+    "HttpSendRequestW",
+    "URLDownloadToFileA",
+    "URLDownloadToFileW"
+  ],
+  "strings": [
+    "http://",
+    "https://"
+  ],
+  "regex": [
+    "https?://|www\\."
+  ],
+  "detector": "rules.detectors.download:detect",
+  "description": "HTTP API plus URL/web string evidence.",
+  "fp_note": "Browsers and updaters make HTTP requests."
+}

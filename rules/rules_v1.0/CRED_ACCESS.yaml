@@ -1,0 +1,24 @@
+{
+  "id": "CRED_ACCESS",
+  "name": "Credential access",
+  "category": "credential",
+  "severity": "high",
+  "weight": 20,
+  "attack_technique": "T1003",
+  "apis": [
+    "OpenProcessToken",
+    "CredEnumerateA",
+    "CredEnumerateW",
+    "LsaEnumerateLogonSessions"
+  ],
+  "strings": [
+    "lsass.exe",
+    "sam\\"
+  ],
+  "regex": [
+    "lsass(?:\\.exe)?|sam\\\\"
+  ],
+  "detector": null,
+  "description": "Credential-oriented API or sensitive process/string indicators.",
+  "fp_note": "Security software and system utilities inspect credentials."
+}

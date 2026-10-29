@@ -1,0 +1,18 @@
+{
+  "id": "REMOTE_THREAD",
+  "name": "Remote process/thread access",
+  "category": "process",
+  "severity": "medium",
+  "weight": 3,
+  "attack_technique": "T1055",
+  "apis": [
+    "CreateRemoteThread",
+    "NtCreateThreadEx",
+    "OpenProcess"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": "rules.detectors.injection:detect",
+  "description": "Remote process or thread API evidence.",
+  "fp_note": "Debuggers and profilers use process/thread APIs."
+}

@@ -1,0 +1,20 @@
+{
+  "id": "FILE_OP",
+  "name": "File operation",
+  "category": "file",
+  "severity": "low",
+  "weight": 3,
+  "attack_technique": null,
+  "apis": [
+    "CreateFileA",
+    "CreateFileW",
+    "WriteFile",
+    "DeleteFileA",
+    "DeleteFileW"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "File creation, write, or deletion API evidence.",
+  "fp_note": "Routine application behavior."
+}

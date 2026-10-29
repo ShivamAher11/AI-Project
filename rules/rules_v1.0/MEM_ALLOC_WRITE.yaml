@@ -1,0 +1,19 @@
+{
+  "id": "MEM_ALLOC_WRITE",
+  "name": "Remote memory allocation and write",
+  "category": "process",
+  "severity": "medium",
+  "weight": 3,
+  "attack_technique": "T1055",
+  "apis": [
+    "VirtualAllocEx",
+    "NtAllocateVirtualMemory",
+    "WriteProcessMemory",
+    "NtWriteVirtualMemory"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": "rules.detectors.injection:detect",
+  "description": "Remote allocation/write API evidence; grouped with process/thread signals.",
+  "fp_note": "Debuggers and accessibility tools may manipulate other processes."
+}

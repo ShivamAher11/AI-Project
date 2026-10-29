@@ -1,0 +1,20 @@
+{
+  "id": "PROC_CREATE",
+  "name": "Child process creation",
+  "category": "execution",
+  "severity": "medium",
+  "weight": 5,
+  "attack_technique": null,
+  "apis": [
+    "CreateProcessA",
+    "CreateProcessW",
+    "ShellExecuteA",
+    "ShellExecuteW",
+    "WinExec"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "API that may create a child process.",
+  "fp_note": "Common in benign launchers and applications."
+}

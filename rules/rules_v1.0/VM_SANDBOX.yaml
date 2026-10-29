@@ -1,0 +1,23 @@
+{
+  "id": "VM_SANDBOX",
+  "name": "Virtual machine or sandbox check",
+  "category": "evasion",
+  "severity": "medium",
+  "weight": 8,
+  "attack_technique": "T1497",
+  "apis": [
+    "CPUID"
+  ],
+  "strings": [
+    "VMware",
+    "VirtualBox",
+    "VBox",
+    "QEMU"
+  ],
+  "regex": [
+    "VMware|VirtualBox|VBox|QEMU"
+  ],
+  "detector": "rules.detectors.antianalysis:detect",
+  "description": "Virtualization or sandbox indicators.",
+  "fp_note": "Hardware inventory and compatibility checks may inspect VM attributes."
+}

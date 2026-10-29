@@ -1,0 +1,19 @@
+{
+  "id": "DNS_RESOLVE",
+  "name": "DNS resolution",
+  "category": "network",
+  "severity": "low",
+  "weight": 3,
+  "attack_technique": "T1071.004",
+  "apis": [
+    "gethostbyname",
+    "getaddrinfo",
+    "DnsQuery_A",
+    "DnsQuery_W"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "Hostname or DNS resolution API.",
+  "fp_note": "Routine network client behavior."
+}

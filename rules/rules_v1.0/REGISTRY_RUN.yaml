@@ -1,0 +1,24 @@
+{
+  "id": "REGISTRY_RUN",
+  "name": "Run/RunOnce persistence",
+  "category": "persistence",
+  "severity": "high",
+  "weight": 15,
+  "attack_technique": "T1547.001",
+  "apis": [
+    "RegCreateKeyExA",
+    "RegCreateKeyExW",
+    "RegSetValueExA",
+    "RegSetValueExW"
+  ],
+  "strings": [
+    "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+    "Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+  ],
+  "regex": [
+    "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run(?:Once)?"
+  ],
+  "detector": "rules.detectors.registry_persist:detect",
+  "description": "Registry APIs and Run-key string; require open/set evidence with call proximity.",
+  "fp_note": "Legitimate installers and updaters commonly create Run entries."
+}

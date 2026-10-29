@@ -1,3 +1,4 @@
 lief==1.0.0
 networkx==3.7
 scipy>=1.15,<2
+PyYAML==6.0.2

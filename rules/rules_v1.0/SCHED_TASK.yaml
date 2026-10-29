@@ -1,0 +1,21 @@
+{
+  "id": "SCHED_TASK",
+  "name": "Scheduled task creation",
+  "category": "persistence",
+  "severity": "high",
+  "weight": 15,
+  "attack_technique": "T1053",
+  "apis": [],
+  "strings": [
+    "TaskScheduler",
+    "schtasks",
+    "/Create",
+    "Schedule.Service"
+  ],
+  "regex": [
+    "TaskScheduler|schtasks(?:\\.exe)?|/Create"
+  ],
+  "detector": null,
+  "description": "Task Scheduler COM or command indicators with persistence context.",
+  "fp_note": "Administrators and installers schedule maintenance tasks."
+}

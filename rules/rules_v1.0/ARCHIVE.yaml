@@ -1,0 +1,24 @@
+{
+  "id": "ARCHIVE",
+  "name": "Archive/decompression",
+  "category": "file",
+  "severity": "low",
+  "weight": 2,
+  "attack_technique": null,
+  "apis": [
+    "RtlDecompressBuffer",
+    "RtlDecompressFragment"
+  ],
+  "strings": [
+    "unzip",
+    "7z",
+    "decompress",
+    "zip"
+  ],
+  "regex": [
+    "unzip|7z|decompress|zip"
+  ],
+  "detector": null,
+  "description": "Archive or decompression indicators.",
+  "fp_note": "Applications commonly process compressed resources."
+}

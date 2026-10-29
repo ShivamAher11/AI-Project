@@ -1,0 +1,23 @@
+{
+  "id": "ANTI_DEBUG",
+  "name": "Anti-debugging check",
+  "category": "evasion",
+  "severity": "medium",
+  "weight": 8,
+  "attack_technique": "T1497",
+  "apis": [
+    "IsDebuggerPresent",
+    "CheckRemoteDebuggerPresent",
+    "NtQueryInformationProcess"
+  ],
+  "strings": [
+    "RDTSC",
+    "rdtsc"
+  ],
+  "regex": [
+    "\\bRDTSC\\b"
+  ],
+  "detector": "rules.detectors.antianalysis:detect",
+  "description": "Debugger-detection or timing check.",
+  "fp_note": "Anti-cheat, diagnostics, and protected software may detect debuggers."
+}

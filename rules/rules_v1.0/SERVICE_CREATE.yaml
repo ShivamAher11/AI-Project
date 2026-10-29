@@ -1,0 +1,21 @@
+{
+  "id": "SERVICE_CREATE",
+  "name": "Service creation",
+  "category": "persistence",
+  "severity": "high",
+  "weight": 15,
+  "attack_technique": "T1543",
+  "apis": [
+    "OpenSCManagerA",
+    "OpenSCManagerW",
+    "CreateServiceA",
+    "CreateServiceW",
+    "StartServiceA",
+    "StartServiceW"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "Service manager and service creation/start APIs.",
+  "fp_note": "Legitimate installers create services."
+}

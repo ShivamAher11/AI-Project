@@ -12,7 +12,8 @@ from starlette.datastructures import UploadFile
 
 from ...celery_app import celery_app
 from ...db import new_session
-from ...models import Analysis, CallEdge, ExportSymbol, Function, ImportSymbol, Section, StringRecord
+from ...models import (Analysis, AttackMapping, CallEdge, Evidence, ExportSymbol, Finding, Function,
+                       ImportSymbol, Section, StringRecord)
 from ...sse import analysis_event_stream, event_response, store_terminal_tombstone
 from ...state_machine import TERMINAL_STATES, transition_analysis
 from ...storage import (
@@ -246,6 +247,9 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
             "stage": analysis.stage,
             "source": analysis.ghidra_source,
             "source_label": "source: fixture" if analysis.ghidra_source == "fixture" else f"source: {analysis.ghidra_source}",
+            "scoring": {"score": analysis.risk_score, "rating": analysis.risk_rating,
+                        "scoring_version": analysis.scoring_version, "rule_set_version": analysis.rule_set_version,
+                        "input_hash": analysis.scoring_input_hash, "breakdown": analysis.scoring_breakdown or []},
             "static_available": bool(sections or imports or exports or strings or analysis.arch != "unknown"),
             "file": {
                 "sha256": analysis.sha256,
@@ -290,6 +294,31 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
             "edges": [{"caller": row.caller_id, "callee": row.callee_id, "type": row.edge_type}
                       for row in sorted(edges, key=lambda item: (item.caller_id, item.callee_id, item.edge_type))],
         }
+
+
+@router.get("/{analysis_id}/findings")
+def analysis_findings(analysis_id: uuid.UUID):
+    with new_session() as session:
+        _get_analysis(session, analysis_id)
+        rows = list(session.scalars(select(Finding).where(Finding.analysis_id == analysis_id)))
+        result = []
+        for row in sorted(rows, key=lambda item: (-item.score_contribution, item.group_id or item.type, str(item.id))):
+            evidence = sorted(session.scalars(select(Evidence).where(Evidence.finding_id == row.id)),
+                              key=lambda item: (item.source_type, item.source_id, str(item.id)))
+            mappings = sorted(session.scalars(select(AttackMapping).where(AttackMapping.finding_id == row.id)),
+                              key=lambda item: item.technique_id)
+            result.append({"id": str(row.id), "type": row.type, "group_id": row.group_id, "title": row.title,
+                "severity": row.severity, "confidence": row.confidence, "confidence_score": row.confidence_score,
+                "description": row.description, "interpretation": row.interpretation, "alternative": row.alternative,
+                "score_contribution": row.score_contribution, "signal_ids": row.signal_ids,
+                "evidence": [{"id": str(item.id), "source_type": item.source_type, "source_id": item.source_id,
+                    "excerpt": item.excerpt, "offset_or_address": item.offset_or_address, "reason": item.reason}
+                    for item in evidence],
+                "attack_mappings": [{"technique_id": item.technique_id, "technique_name": item.technique_name,
+                    "confidence": item.confidence, "confidence_score": item.confidence_score,
+                    "label": "Likely" if item.confidence_score >= 0.8 else "Possible" if item.confidence_score >= 0.5 else None,
+                    "display": item.confidence_score >= 0.5, "rationale": item.rationale} for item in mappings]})
+        return {"items": result}
 
 
 @router.get("/{analysis_id}/functions")

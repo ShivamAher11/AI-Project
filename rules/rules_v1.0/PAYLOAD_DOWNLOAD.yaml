@@ -1,0 +1,27 @@
+{
+  "id": "PAYLOAD_DOWNLOAD",
+  "name": "Network download to file",
+  "category": "network",
+  "severity": "medium",
+  "weight": 15,
+  "attack_technique": "T1105",
+  "apis": [
+    "connect",
+    "WinHttpSendRequest",
+    "HttpSendRequestA",
+    "HttpSendRequestW",
+    "URLDownloadToFileA",
+    "URLDownloadToFileW",
+    "WriteFile",
+    "CreateFileA",
+    "CreateFileW"
+  ],
+  "strings": [
+    "http://",
+    "https://"
+  ],
+  "regex": [],
+  "detector": "rules.detectors.download:detect",
+  "description": "Network + HTTP + file-write evidence correlation.",
+  "fp_note": "Browsers and updaters download files."
+}

@@ -1,0 +1,26 @@
+{
+  "id": "TEMP_ABUSE",
+  "name": "Temporary executable file",
+  "category": "file",
+  "severity": "low",
+  "weight": 3,
+  "attack_technique": null,
+  "apis": [
+    "GetTempPathA",
+    "GetTempPathW",
+    "WriteFile",
+    "CreateFileA",
+    "CreateFileW"
+  ],
+  "strings": [
+    ".exe",
+    ".dll",
+    ".scr"
+  ],
+  "regex": [
+    "\\.(?:exe|dll|scr)\\b"
+  ],
+  "detector": null,
+  "description": "Temporary path/file write plus executable extension.",
+  "fp_note": "Installers and self-updaters stage executable files."
+}

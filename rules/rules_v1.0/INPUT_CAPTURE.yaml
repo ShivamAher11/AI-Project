@@ -1,0 +1,19 @@
+{
+  "id": "INPUT_CAPTURE",
+  "name": "Input capture",
+  "category": "input",
+  "severity": "high",
+  "weight": 20,
+  "attack_technique": "T1056",
+  "apis": [
+    "SetWindowsHookExA",
+    "SetWindowsHookExW",
+    "GetAsyncKeyState",
+    "GetForegroundWindow"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "Input hook or keyboard-state API evidence.",
+  "fp_note": "Hotkey tools and accessibility software inspect input."
+}

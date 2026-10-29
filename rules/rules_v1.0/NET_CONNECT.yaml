@@ -1,0 +1,20 @@
+{
+  "id": "NET_CONNECT",
+  "name": "Network connection",
+  "category": "network",
+  "severity": "medium",
+  "weight": 5,
+  "attack_technique": "T1071",
+  "apis": [
+    "socket",
+    "connect",
+    "WSAStartup",
+    "send",
+    "recv"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": "rules.detectors.download:detect",
+  "description": "Socket/network connection APIs.",
+  "fp_note": "Network clients routinely communicate."
+}

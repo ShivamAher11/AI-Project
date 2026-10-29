@@ -1,0 +1,19 @@
+{
+  "id": "DLL_LOAD_DYNRESOLVE",
+  "name": "Dynamic library resolution",
+  "category": "execution",
+  "severity": "low",
+  "weight": 3,
+  "attack_technique": null,
+  "apis": [
+    "LoadLibraryA",
+    "LoadLibraryW",
+    "GetProcAddress",
+    "LdrLoadDll"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "Dynamic module or symbol resolution.",
+  "fp_note": "Common plugin and compatibility behavior."
+}

@@ -1,0 +1,14 @@
+{
+  "id": "PACKED_HEURISTIC",
+  "name": "Possible packing heuristic",
+  "category": "evasion",
+  "severity": "low",
+  "weight": 5,
+  "attack_technique": "T1027",
+  "apis": [],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "High entropy plus abnormal section or missing-symbol evidence; heuristic, not proof.",
+  "fp_note": "Compression, encryption, and embedded resources raise entropy."
+}

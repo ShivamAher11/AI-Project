@@ -3,7 +3,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from celery.utils.log import get_task_logger
 from sqlalchemy import select
@@ -11,11 +11,13 @@ from sqlalchemy import select
 from app.celery_app import celery_app
 from app.db import new_session
 from app.models import Analysis, CallEdge, ExportSymbol, Function, ImportSymbol, Section, StringRecord
+from app.models import AttackMapping, Evidence, Finding, Signal
 from app.state_machine import InvalidStateTransition, transition_analysis
 from app.storage import artifact_dir_path, remove_temporary_artifacts, resolve_under, upload_file_path
 from worker.lief_extract import InvalidBinary, UnsupportedArchitecture, extract_pe, load_import_categories
 from worker.normalize import NormalizationError, normalize_analysis, serialize_normalized
 from worker.ghidra_runner import GhidraRunner
+from worker.rules.engine import detect_analysis
 
 logger = get_task_logger(__name__)
 PLACEHOLDER_DELAY_S = float(os.getenv("PLACEHOLDER_STAGE_DELAY_S", "0.35"))
@@ -117,6 +119,79 @@ def _persist_functions(analysis_id: str, normalized: dict) -> None:
         session.commit()
 
 
+def _persist_detection(analysis_id: str, normalized: dict, result: dict) -> None:
+    """Persist deterministic detector output and resolve evidence refs to same-analysis rows."""
+    analysis_uuid = UUID(analysis_id)
+    refs = result["evidence"]
+    with new_session() as session:
+        analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
+        if analysis is None or analysis.status in {"CANCELLED", "FAILED"}:
+            return
+        analysis.risk_score = result["scoring"]["score"]
+        analysis.risk_rating = result["scoring"]["rating"]
+        analysis.scoring_version = result["scoring"]["scoring_version"]
+        analysis.rule_set_version = result["scoring"]["rule_set_version"]
+        analysis.scoring_input_hash = result["scoring"]["input_hash"]
+        analysis.scoring_breakdown = result["scoring"]["breakdown"]
+
+        imports = list(session.scalars(select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_uuid)))
+        strings = list(session.scalars(select(StringRecord).where(StringRecord.analysis_id == analysis_uuid)))
+        sections = list(session.scalars(select(Section).where(Section.analysis_id == analysis_uuid)))
+        functions = {row.id: row for row in session.scalars(select(Function).where(Function.analysis_id == analysis_uuid))}
+
+        def resolve(ref: str) -> tuple[str, str]:
+            item = refs.get(ref)
+            if item is None:
+                raise ValueError("Detector emitted an unknown evidence reference.")
+            source_type, key = item["source_type"], item["source_key"]
+            if source_type == "import":
+                row = next((r for r in imports if [r.library, r.name, r.address] == key), None)
+            elif source_type == "string":
+                row = next((r for r in strings if [r.offset, r.value] == key), None)
+            elif source_type == "section":
+                row = next((r for r in sections if r.name == key), None)
+            elif source_type == "function":
+                row = functions.get(key)
+            elif source_type == "metadata":
+                row = analysis if key == str(analysis_uuid) else None
+            elif source_type == "rule":
+                return source_type, str(key)
+            else:
+                row = None
+            if row is None or getattr(row, "analysis_id", analysis_uuid) != analysis_uuid:
+                raise ValueError("Detector evidence source does not belong to this analysis.")
+            return source_type, str(getattr(row, "id", analysis_uuid))
+
+        signal_rows = [Signal(id=sig["signal_id"], analysis_id=analysis_uuid, rule_id=sig["rule_id"],
+                              function_ids=sig["function_ids"], evidence_refs=sig["evidence_refs"])
+                       for sig in result["signals"]]
+        session.add_all(signal_rows)
+        finding_ids = {}
+        for finding in result["findings"]:
+            fid = uuid5(analysis_uuid, finding["rule_id"])
+            finding_ids[finding["rule_id"]] = fid
+            session.add(Finding(id=fid, analysis_id=analysis_uuid, type="rule", title=finding["title"],
+                severity=finding["severity"], confidence=finding["confidence"], confidence_score=finding["confidence_score"],
+                description=finding["description"], interpretation=finding["interpretation"], alternative=finding["alternative"],
+                score_contribution=finding["weight"], group_id=finding["group_id"], signal_ids=finding["signal_ids"]))
+        session.flush()
+        for finding in result["findings"]:
+            fid = finding_ids[finding["rule_id"]]
+            if not finding["evidence_refs"]:
+                raise ValueError("Every persisted finding must have evidence.")
+            for ref in finding["evidence_refs"]:
+                source_type, source_id = resolve(ref)
+                item = refs[ref]
+                session.add(Evidence(id=uuid5(fid, ref), analysis_id=analysis_uuid, finding_id=fid, evidence_type=finding["rule_id"],
+                    source_type=source_type, source_id=source_id, excerpt=item["excerpt"],
+                    offset_or_address=item.get("offset"), reason=item.get("reason")))
+            for mapping in finding["attack_mappings"]:
+                session.add(AttackMapping(finding_id=fid, technique_id=mapping["technique_id"],
+                    technique_name=mapping["technique_name"], confidence=mapping["confidence"],
+                    confidence_score=mapping["confidence_score"], rationale=mapping["rationale"]))
+        session.commit()
+
+
 def _touch_heartbeat(analysis_id: str) -> None:
     with new_session() as session:
         analysis = session.get(Analysis, UUID(analysis_id))
@@ -214,7 +289,26 @@ def analyze(self, analysis_id: str):
                 current = session.get(Analysis, analysis_uuid)
                 if current is None or current.status == "CANCELLED":
                     return {"id": analysis_id, "status": "CANCELLED"}
-            time.sleep(PLACEHOLDER_DELAY_S)
+            if stage == "DETECTION":
+                detection = detect_analysis(normalized)
+                normalized["signals"] = detection["signals"]
+                normalized["rule_hits"] = [
+                    {"rule_id": hit.rule_id, "function_ids": hit.function_ids, "evidence_refs": hit.evidence_refs,
+                     "weight": hit.weight, "absorbed": hit.absorbed, "signal_ids": list(hit.signal_ids)}
+                    for hit in detection["hits"]
+                ]
+                normalized["findings"] = [
+                    {"finding_id": str(uuid5(analysis_uuid, finding["rule_id"])),
+                     "group_id": finding["group_id"], "signal_ids": finding["signal_ids"], "weight": finding["weight"]}
+                    for finding in detection["findings"]
+                ]
+                normalized["scoring"] = detection["scoring"]
+                _persist_detection(analysis_id, normalized, detection)
+                from worker.normalize import validate_normalized
+                validate_normalized(normalized)
+                _write_normalized(data_root, analysis_id, normalized)
+            else:
+                time.sleep(PLACEHOLDER_DELAY_S)
 
         with new_session() as session:
             analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
@@ -225,9 +319,9 @@ def analyze(self, analysis_id: str):
             analysis.ai_status = "DISABLED"
             analysis.error_code = "PIPELINE_STUBBED"
             analysis.error_message = (
-                "PE x64 static metadata and fixture decompilation output were saved; detection and AI stages remain placeholders."
+                "PE x64 static metadata, fixture decompilation output, and deterministic findings were saved; AI analysis remains disabled."
                 if normalized["source"] == "fixture" else
-                "PE x64 static metadata was saved; real Ghidra, detection, and AI stages were not run."
+                "PE x64 static metadata and deterministic findings were saved; real Ghidra was unavailable and AI analysis remains disabled."
             )
             session.commit()
         return {"id": analysis_id, "status": "PARTIAL"}

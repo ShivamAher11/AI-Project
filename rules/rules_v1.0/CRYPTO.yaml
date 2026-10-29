@@ -1,0 +1,21 @@
+{
+  "id": "CRYPTO",
+  "name": "Cryptographic operation",
+  "category": "crypto",
+  "severity": "medium",
+  "weight": 5,
+  "attack_technique": null,
+  "apis": [
+    "CryptEncrypt",
+    "CryptAcquireContextA",
+    "CryptAcquireContextW",
+    "BCryptEncrypt",
+    "AES",
+    "RSA"
+  ],
+  "strings": [],
+  "regex": [],
+  "detector": null,
+  "description": "Cryptographic API or algorithm indicators.",
+  "fp_note": "Encryption is common in secure applications."
+}
