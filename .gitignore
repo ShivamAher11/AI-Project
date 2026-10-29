@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+data/
+evaluation/corpus/
+evaluation/**/*.exe
+evaluation/**/*.dll
+evaluation/**/*.elf
+evaluation/**/*.so
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+docs/*.docx
