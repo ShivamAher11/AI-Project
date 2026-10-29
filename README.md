@@ -4,7 +4,7 @@ Evidence-first assistant for static reverse engineering. It analyzes uploaded bi
 
 ## Status
 
-Repository scaffold only. No application features are implemented yet. See `docs/SPEC.md` for the locked Implementation Master v1.4 and `AGENTS.md` for permanent project rules.
+The first vertical slice is in place: binary upload validation and storage, a placeholder Celery pipeline, status/SSE progress, and deletion. The pipeline does not yet analyze binary contents and ends honestly as `PARTIAL`. See `docs/SPEC.md` and `AGENTS.md` for the product contract and permanent project rules.
 
 ## Requirements
 
@@ -34,6 +34,18 @@ To run unit tests against the Compose PostgreSQL database from another terminal:
 
 ```powershell
 docker compose exec api pytest -p no:cacheprovider /tests/unit -q
+```
+
+To exercise upload, SSE, and deletion in PowerShell, create a tiny fake PE header and run:
+
+```powershell
+python -c "from pathlib import Path; Path('tiny-pe.exe').write_bytes(b'MZ' + bytes(126))"
+$upload = curl.exe -sS -F "file=@tiny-pe.exe;type=application/octet-stream" http://localhost:8000/api/v1/analyses
+$upload
+$id = ($upload | ConvertFrom-Json).id
+curl.exe -sS -N "http://localhost:8000/api/v1/analyses/$id/events"
+curl.exe -sS -X DELETE "http://localhost:8000/api/v1/analyses/$id"
+Remove-Item -LiteralPath tiny-pe.exe
 ```
 
 Stop the stack with `docker compose down` (named volumes are retained).

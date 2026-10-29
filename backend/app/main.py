@@ -4,12 +4,18 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from . import models as _models
+from .api.v1.analyses import router as analyses_router
+from .cleanup import cleanup_on_startup
+from .storage import ensure_storage_roots
 
 
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
@@ -44,7 +50,14 @@ root_logger.addHandler(handler)
 root_logger.setLevel(logging.INFO)
 logger = logging.getLogger("api")
 
-app = FastAPI(title="AI-Assisted Reverse Engineering Assistant", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    ensure_storage_roots(os.getenv("DATA_ROOT", "/data"))
+    cleanup_on_startup()
+    yield
+
+
+app = FastAPI(title="AI-Assisted Reverse Engineering Assistant", version="0.1.0", lifespan=lifespan)
 
 
 class ExactCORSMiddleware(CORSMiddleware):
@@ -91,10 +104,16 @@ async def attach_request_id(request: Request, call_next):
 @app.exception_handler(StarletteHTTPException)
 async def http_error_handler(request: Request, exc: StarletteHTTPException):
     rid = request_id_var.get()
+    if isinstance(exc.detail, dict):
+        code = str(exc.detail.get("code", "HTTP_ERROR"))
+        message = str(exc.detail.get("message", "Request failed."))
+    else:
+        code = "HTTP_ERROR"
+        message = str(exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
         headers=exc.headers,
-        content={"error": {"code": "HTTP_ERROR", "message": str(exc.detail), "request_id": rid}},
+        content={"error": {"code": code, "message": message, "request_id": rid}},
     )
 
 
@@ -109,3 +128,6 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+app.include_router(analyses_router, prefix="/api/v1/analyses", tags=["analyses"])

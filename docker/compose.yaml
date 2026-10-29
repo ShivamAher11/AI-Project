@@ -27,6 +27,8 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       DATA_ROOT: ${DATA_ROOT:-/data}
+      MAX_FILE_MB: ${MAX_FILE_MB:-100}
+      TTL_HOURS: ${TTL_HOURS:-24}
     ports:
       - "8000:8000"
     volumes:
@@ -54,11 +56,13 @@ services:
 
   worker:
     build:
-      context: ../worker
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: worker/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://app:app-local-password@postgres:5432/analysis}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DATA_ROOT: ${DATA_ROOT:-/data}
+      PLACEHOLDER_STAGE_DELAY_S: ${PLACEHOLDER_STAGE_DELAY_S:-0.35}
     volumes:
       - uploads:/data/uploads
       - artifacts:/data/artifacts
@@ -76,11 +80,11 @@ services:
         reservations:
           memory: 4g
     healthcheck:
-      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      test: ["CMD-SHELL", "celery -A app.celery_app:celery_app inspect ping --timeout=4 | grep -q pong"]
       interval: 15s
-      timeout: 3s
+      timeout: 6s
       retries: 3
-      start_period: 5s
+      start_period: 20s
     restart: on-failure:3
 
   redis:
