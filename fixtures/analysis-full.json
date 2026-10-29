@@ -1,0 +1,587 @@
+{
+  "schema_version": "1.0",
+  "analysis_id": "a1b2c3d4-e5f6-4789-8123-456789abcdef",
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "md5": "0123456789abcdef0123456789abcdef",
+  "status": "COMPLETED",
+  "decomp_status": "OK",
+  "file": {
+    "original_filename": "sample-x64.exe",
+    "size": 184320,
+    "format": "pe",
+    "arch": "x64",
+    "bitness": 64,
+    "endian": "le",
+    "entry_point": "0x140001000",
+    "extension_mismatch": false
+  },
+  "toolchain": {
+    "ghidra": "fixture",
+    "jdk": "fixture",
+    "lief": "fixture",
+    "capstone": "fixture"
+  },
+  "versions": {
+    "scoring": "1.0",
+    "rules": "1.0",
+    "prompts": "1.0"
+  },
+  "sections": [
+    {
+      "name": ".text",
+      "vaddr": "0x140001000",
+      "vsize": 6144,
+      "raw_size": 6144,
+      "perms": "R-X",
+      "entropy": 6.31
+    },
+    {
+      "name": ".rdata",
+      "vaddr": "0x140008000",
+      "vsize": 2048,
+      "raw_size": 2048,
+      "perms": "R--",
+      "entropy": 4.72
+    },
+    {
+      "name": ".data",
+      "vaddr": "0x14000a000",
+      "vsize": 1024,
+      "raw_size": 512,
+      "perms": "RW-",
+      "entropy": 2.18
+    }
+  ],
+  "imports": [
+    {
+      "library": "kernel32.dll",
+      "name": "OpenProcess",
+      "ordinal": null,
+      "address": "0x140010100",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "VirtualAllocEx",
+      "ordinal": null,
+      "address": "0x140010108",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "WriteProcessMemory",
+      "ordinal": null,
+      "address": "0x140010110",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "CreateRemoteThread",
+      "ordinal": null,
+      "address": "0x140010118",
+      "category": "process"
+    },
+    {
+      "library": "advapi32.dll",
+      "name": "RegCreateKeyExW",
+      "ordinal": null,
+      "address": "0x140010120",
+      "category": "registry"
+    },
+    {
+      "library": "advapi32.dll",
+      "name": "RegSetValueExW",
+      "ordinal": null,
+      "address": "0x140010128",
+      "category": "registry"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpOpen",
+      "ordinal": null,
+      "address": "0x140010130",
+      "category": "network"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpConnect",
+      "ordinal": null,
+      "address": "0x140010138",
+      "category": "network"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpOpenRequest",
+      "ordinal": null,
+      "address": "0x140010140",
+      "category": "network"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpSendRequest",
+      "ordinal": null,
+      "address": "0x140010148",
+      "category": "network"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "CreateFileW",
+      "ordinal": null,
+      "address": "0x140010150",
+      "category": "file"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "WriteFile",
+      "ordinal": null,
+      "address": "0x140010158",
+      "category": "file"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "CloseHandle",
+      "ordinal": null,
+      "address": "0x140010160",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "GetCurrentProcessId",
+      "ordinal": null,
+      "address": "0x140010168",
+      "category": "process"
+    }
+  ],
+  "exports": [],
+  "strings": [
+    {
+      "offset": "0x140008100",
+      "encoding": "utf-16le",
+      "value": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "length": 45,
+      "category": "registry"
+    },
+    {
+      "offset": "0x140008180",
+      "encoding": "utf-8",
+      "value": "https://updates.example.org/api/v1/stage",
+      "length": 41,
+      "category": "url"
+    },
+    {
+      "offset": "0x1400081c0",
+      "encoding": "utf-8",
+      "value": "https://cdn.example.org/payload.bin",
+      "length": 35,
+      "category": "url"
+    }
+  ],
+  "functions": [
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001000",
+      "address": "0x140001000",
+      "name": "main",
+      "signature": "int main(void)",
+      "size": 122,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001100",
+      "address": "0x140001100",
+      "name": "FUN_140001100",
+      "signature": null,
+      "size": 86,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001200",
+      "address": "0x140001200",
+      "name": "FUN_140001200",
+      "signature": null,
+      "size": 144,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001300",
+      "address": "0x140001300",
+      "name": "FUN_140001300",
+      "signature": null,
+      "size": 211,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001400",
+      "address": "0x140001400",
+      "name": "FUN_140001400",
+      "signature": null,
+      "size": 309,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001500",
+      "address": "0x140001500",
+      "name": "FUN_140001500",
+      "signature": null,
+      "size": 188,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001600",
+      "address": "0x140001600",
+      "name": "FUN_140001600",
+      "signature": null,
+      "size": 173,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001700",
+      "address": "0x140001700",
+      "name": "FUN_140001700",
+      "signature": null,
+      "size": 92,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001800",
+      "address": "0x140001800",
+      "name": "FUN_140001800",
+      "signature": null,
+      "size": 101,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001900",
+      "address": "0x140001900",
+      "name": "FUN_140001900",
+      "signature": null,
+      "size": 165,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001a00",
+      "address": "0x140001a00",
+      "name": "FUN_140001a00",
+      "signature": null,
+      "size": 117,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00",
+      "address": "0x140001b00",
+      "name": "FUN_140001b00",
+      "signature": null,
+      "size": 205,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "address": "0x140001c00",
+      "name": "FUN_140001c00",
+      "signature": null,
+      "size": 94,
+      "decompiler_status": "ok",
+      "assembly_excerpt": "CALL qword ptr [CreateRemoteThread]",
+      "decompiled_excerpt": "hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);\nremote = VirtualAllocEx(hProcess, NULL, payloadSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);\nWriteProcessMemory(hProcess, remote, payload, payloadSize, &written);\nCreateRemoteThread(hProcess, NULL, 0, remote, NULL, 0, NULL);",
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00",
+      "address": "0x140001d00",
+      "name": "FUN_140001d00",
+      "signature": null,
+      "size": 274,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    },
+    {
+      "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001e00",
+      "address": "0x140001e00",
+      "name": "FUN_140001e00",
+      "signature": null,
+      "size": 181,
+      "decompiler_status": "ok",
+      "assembly_excerpt": null,
+      "decompiled_excerpt": null,
+      "artifact": null
+    }
+  ],
+  "edges": [
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001000",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001100",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001100",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001200",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001200",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001300",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001300",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001400",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001400",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001500",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001500",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001600",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001600",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001700",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001700",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001800",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001800",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001900",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001900",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001a00",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001a00",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00",
+      "callee": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001e00",
+      "type": "direct"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001400",
+      "callee": "WinHttpOpen",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001400",
+      "callee": "WinHttpConnect",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "callee": "OpenProcess",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "callee": "VirtualAllocEx",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "callee": "WriteProcessMemory",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
+      "callee": "CreateRemoteThread",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00",
+      "callee": "RegCreateKeyExW",
+      "type": "import"
+    },
+    {
+      "caller": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001e00",
+      "callee": "RegSetValueExW",
+      "type": "import"
+    }
+  ],
+  "signals": [
+    {
+      "signal_id": "S-INJ-01",
+      "rule_id": "PROC_OPEN",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001900",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00"
+      ],
+      "evidence_refs": [
+        "I-OpenProcess",
+        "F-INJECT"
+      ]
+    },
+    {
+      "signal_id": "S-INJ-02",
+      "rule_id": "MEM_ALLOC_WRITE",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001a00",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00"
+      ],
+      "evidence_refs": [
+        "I-VirtualAllocEx",
+        "I-WriteProcessMemory",
+        "F-INJECT"
+      ]
+    },
+    {
+      "signal_id": "S-INJ-03",
+      "rule_id": "REMOTE_THREAD",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00"
+      ],
+      "evidence_refs": [
+        "I-CreateRemoteThread",
+        "F-INJECT"
+      ]
+    },
+    {
+      "signal_id": "S-REG-01",
+      "rule_id": "REG_OPEN_CREATE",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00"
+      ],
+      "evidence_refs": [
+        "I-RegCreateKeyExW",
+        "STR-RUN"
+      ]
+    },
+    {
+      "signal_id": "S-REG-02",
+      "rule_id": "REG_SET",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001e00"
+      ],
+      "evidence_refs": [
+        "I-RegSetValueExW",
+        "STR-RUN"
+      ]
+    }
+  ],
+  "rule_hits": [
+    {
+      "rule_id": "G_INJECTION",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001900",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001a00",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00"
+      ],
+      "evidence_refs": [
+        "I-OpenProcess",
+        "I-VirtualAllocEx",
+        "I-WriteProcessMemory",
+        "I-CreateRemoteThread",
+        "F-INJECT"
+      ],
+      "weight": 25,
+      "absorbed": false,
+      "signal_ids": [
+        "S-INJ-01",
+        "S-INJ-02",
+        "S-INJ-03"
+      ]
+    },
+    {
+      "rule_id": "G_REG_PERSIST",
+      "function_ids": [
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00",
+        "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001e00"
+      ],
+      "evidence_refs": [
+        "I-RegCreateKeyExW",
+        "I-RegSetValueExW",
+        "STR-RUN"
+      ],
+      "weight": 15,
+      "absorbed": false,
+      "signal_ids": [
+        "S-REG-01",
+        "S-REG-02"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "11111111-2222-4333-8444-555555555555",
+      "group_id": "G_INJECTION",
+      "signal_ids": [
+        "S-INJ-01",
+        "S-INJ-02",
+        "S-INJ-03"
+      ],
+      "weight": 25
+    },
+    {
+      "finding_id": "22222222-3333-4444-8555-666666666666",
+      "group_id": "G_REG_PERSIST",
+      "signal_ids": [
+        "S-REG-01",
+        "S-REG-02"
+      ],
+      "weight": 15
+    }
+  ],
+  "provenance": {
+    "input_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    "created_at": "2026-10-29T12:00:00Z"
+  }
+}

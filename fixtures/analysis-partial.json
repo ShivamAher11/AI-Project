@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0",
+  "analysis_id": "a1b2c3d4-e5f6-4789-8123-456789abcdef",
+  "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "md5": "fedcba9876543210fedcba9876543210",
+  "status": "PARTIAL",
+  "decomp_status": "TIMEOUT",
+  "file": {
+    "original_filename": "sample-x64.exe",
+    "size": 184320,
+    "format": "pe",
+    "arch": "x64",
+    "bitness": 64,
+    "endian": "le",
+    "entry_point": "0x140001000",
+    "extension_mismatch": false
+  },
+  "toolchain": {
+    "ghidra": "fixture",
+    "jdk": "fixture",
+    "lief": "fixture",
+    "capstone": "fixture"
+  },
+  "versions": {
+    "scoring": "1.0",
+    "rules": "1.0",
+    "prompts": "1.0"
+  },
+  "sections": [
+    {
+      "name": ".text",
+      "vaddr": "0x140001000",
+      "vsize": 6144,
+      "raw_size": 6144,
+      "perms": "R-X",
+      "entropy": 6.31
+    },
+    {
+      "name": ".rdata",
+      "vaddr": "0x140008000",
+      "vsize": 2048,
+      "raw_size": 2048,
+      "perms": "R--",
+      "entropy": 4.72
+    },
+    {
+      "name": ".data",
+      "vaddr": "0x14000a000",
+      "vsize": 1024,
+      "raw_size": 512,
+      "perms": "RW-",
+      "entropy": 2.18
+    }
+  ],
+  "imports": [
+    {
+      "library": "kernel32.dll",
+      "name": "OpenProcess",
+      "ordinal": null,
+      "address": "0x140010100",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "VirtualAllocEx",
+      "ordinal": null,
+      "address": "0x140010108",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "WriteProcessMemory",
+      "ordinal": null,
+      "address": "0x140010110",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "CreateRemoteThread",
+      "ordinal": null,
+      "address": "0x140010118",
+      "category": "process"
+    },
+    {
+      "library": "advapi32.dll",
+      "name": "RegCreateKeyExW",
+      "ordinal": null,
+      "address": "0x140010120",
+      "category": "registry"
+    },
+    {
+      "library": "advapi32.dll",
+      "name": "RegSetValueExW",
+      "ordinal": null,
+      "address": "0x140010128",
+      "category": "registry"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpOpen",
+      "ordinal": null,
+      "address": "0x140010130",
+      "category": "network"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpConnect",
+      "ordinal": null,
+      "address": "0x140010138",
+      "category": "network"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpOpenRequest",
+      "ordinal": null,
+      "address": "0x140010140",
+      "category": "network"
+    },
+    {
+      "library": "winhttp.dll",
+      "name": "WinHttpSendRequest",
+      "ordinal": null,
+      "address": "0x140010148",
+      "category": "network"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "CreateFileW",
+      "ordinal": null,
+      "address": "0x140010150",
+      "category": "file"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "WriteFile",
+      "ordinal": null,
+      "address": "0x140010158",
+      "category": "file"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "CloseHandle",
+      "ordinal": null,
+      "address": "0x140010160",
+      "category": "process"
+    },
+    {
+      "library": "kernel32.dll",
+      "name": "GetCurrentProcessId",
+      "ordinal": null,
+      "address": "0x140010168",
+      "category": "process"
+    }
+  ],
+  "exports": [],
+  "strings": [
+    {
+      "offset": "0x140008100",
+      "encoding": "utf-16le",
+      "value": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "length": 45,
+      "category": "registry"
+    },
+    {
+      "offset": "0x140008180",
+      "encoding": "utf-8",
+      "value": "https://updates.example.org/api/v1/stage",
+      "length": 41,
+      "category": "url"
+    },
+    {
+      "offset": "0x1400081c0",
+      "encoding": "utf-8",
+      "value": "https://cdn.example.org/payload.bin",
+      "length": 35,
+      "category": "url"
+    }
+  ],
+  "functions": [],
+  "edges": [],
+  "signals": [],
+  "rule_hits": [],
+  "findings": [],
+  "provenance": {
+    "input_hash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    "created_at": "2026-10-29T12:05:00Z"
+  }
+}

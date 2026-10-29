@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/analysis-schema-v1.0.json",
+  "title": "Normalized static analysis v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "analysis_id", "sha256", "md5", "status", "decomp_status", "file", "toolchain", "versions", "sections", "imports", "exports", "strings", "functions", "edges", "signals", "rule_hits", "findings", "provenance"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "analysis_id": {"type": "string", "format": "uuid"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "md5": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "status": {"enum": ["COMPLETED", "PARTIAL", "FAILED"]},
+    "decomp_status": {"enum": ["OK", "FAILED", "TIMEOUT", "NOT_RUN"]},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["original_filename", "size", "format", "arch", "bitness", "endian", "entry_point", "extension_mismatch"],
+      "properties": {
+        "original_filename": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 0},
+        "format": {"enum": ["pe", "elf"]},
+        "arch": {"enum": ["x64", "x86", "arm64", "arm", "unknown"]},
+        "bitness": {"type": ["integer", "null"], "enum": [32, 64, null]},
+        "endian": {"enum": ["le", "be"]},
+        "entry_point": {"type": ["string", "null"], "pattern": "^0x[0-9a-f]+$"},
+        "extension_mismatch": {"type": "boolean"}
+      }
+    },
+    "toolchain": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ghidra", "jdk", "lief", "capstone"],
+      "properties": {"ghidra": {"type": "string"}, "jdk": {"type": "string"}, "lief": {"type": "string"}, "capstone": {"type": "string"}}
+    },
+    "versions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scoring", "rules", "prompts"],
+      "properties": {"scoring": {"const": "1.0"}, "rules": {"const": "1.0"}, "prompts": {"const": "1.0"}}
+    },
+    "sections": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "vaddr", "vsize", "raw_size", "perms", "entropy"], "properties": {"name": {"type": "string"}, "vaddr": {"$ref": "#/$defs/address"}, "vsize": {"type": "integer", "minimum": 0}, "raw_size": {"type": "integer", "minimum": 0}, "perms": {"type": "string"}, "entropy": {"type": "number", "minimum": 0, "maximum": 8}}}},
+    "imports": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["library", "name", "ordinal", "address", "category"], "properties": {"library": {"type": "string"}, "name": {"type": "string"}, "ordinal": {"type": ["integer", "null"]}, "address": {"$ref": "#/$defs/nullableAddress"}, "category": {"type": ["string", "null"]}}}},
+    "exports": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "address", "ordinal"], "properties": {"name": {"type": "string"}, "address": {"$ref": "#/$defs/nullableAddress"}, "ordinal": {"type": ["integer", "null"]}}}},
+    "strings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["offset", "encoding", "value", "length", "category"], "properties": {"offset": {"$ref": "#/$defs/address"}, "encoding": {"enum": ["utf-8", "utf-16le"]}, "value": {"type": "string"}, "length": {"type": "integer", "minimum": 0}, "category": {"type": ["string", "null"]}}}},
+    "functions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "address", "name", "signature", "size", "decompiler_status", "assembly_excerpt", "decompiled_excerpt", "artifact"], "properties": {"id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}:0x[0-9a-f]+$"}, "address": {"$ref": "#/$defs/address"}, "name": {"type": "string"}, "signature": {"type": ["string", "null"]}, "size": {"type": "integer", "minimum": 0}, "decompiler_status": {"enum": ["ok", "failed"]}, "assembly_excerpt": {"type": ["string", "null"]}, "decompiled_excerpt": {"type": ["string", "null"], "maxLength": 12000}, "artifact": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "size"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "size": {"type": "integer", "minimum": 0}}}]}}}},
+    "edges": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["caller", "callee", "type"], "properties": {"caller": {"type": "string"}, "callee": {"type": "string"}, "type": {"enum": ["direct", "indirect", "import"]}}}},
+    "signals": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["signal_id", "rule_id", "function_ids", "evidence_refs"], "properties": {"signal_id": {"type": "string"}, "rule_id": {"type": "string"}, "function_ids": {"type": "array", "items": {"type": "string"}}, "evidence_refs": {"type": "array", "items": {"type": "string"}}}}},
+    "rule_hits": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["rule_id", "function_ids", "evidence_refs", "weight", "absorbed", "signal_ids"], "properties": {"rule_id": {"type": "string"}, "function_ids": {"type": "array", "items": {"type": "string"}}, "evidence_refs": {"type": "array", "items": {"type": "string"}}, "weight": {"type": "integer"}, "absorbed": {"type": "boolean"}, "signal_ids": {"type": "array", "items": {"type": "string"}}}}},
+    "findings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["finding_id", "group_id", "signal_ids", "weight"], "properties": {"finding_id": {"type": "string", "format": "uuid"}, "group_id": {"type": ["string", "null"]}, "signal_ids": {"type": "array", "items": {"type": "string"}}, "weight": {"type": "integer"}}}},
+    "provenance": {"type": "object", "additionalProperties": false, "required": ["input_hash", "created_at"], "properties": {"input_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "created_at": {"type": "string", "format": "date-time"}}}
+  },
+  "$defs": {
+    "address": {"type": "string", "pattern": "^0x[0-9a-f]+$"},
+    "nullableAddress": {"type": ["string", "null"], "pattern": "^0x[0-9a-f]+$"}
+  }
+}

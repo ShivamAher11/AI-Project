@@ -18,8 +18,26 @@ Copy `.env.example` to `.env` and set local values as needed. Cloud LLM access i
 
 ## Run
 
-Run instructions will be added with the first runnable vertical slice.
+From the repository root, start the stack:
+
+```powershell
+docker compose up --build
+```
+
+The API is available at `http://localhost:8000`; verify it with:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+```
+
+To run unit tests against the Compose PostgreSQL database from another terminal:
+
+```powershell
+docker compose exec api pytest -p no:cacheprovider /tests/unit -q
+```
+
+Stop the stack with `docker compose down` (named volumes are retained).
 
 ## Development
 
-Implement one small end-to-end slice at a time, add tests with each feature, and keep fixture mode usable before enabling the real Ghidra runner.
+The worker and frontend are placeholders. Implement one small end-to-end slice at a time, add tests with each feature, and keep fixture mode usable before enabling the real Ghidra runner.
