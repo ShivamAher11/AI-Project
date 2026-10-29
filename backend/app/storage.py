@@ -1,11 +1,15 @@
 import os
 import shutil
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import re
 from uuid import UUID
 
 
 class UnsafeStoragePath(ValueError):
     pass
+
+
+_FUNCTION_ID = re.compile(r"^([0-9a-f-]+):(0x[0-9a-f]+)$")
 
 
 def resolve_under(base: str | Path, *parts: str | os.PathLike[str]) -> Path:
@@ -41,6 +45,21 @@ def upload_file_path(data_root: str | Path, analysis_id: str) -> Path:
 
 def artifact_dir_path(data_root: str | Path, analysis_id: str) -> Path:
     return resolve_under(Path(data_root) / "artifacts", analysis_id_component(analysis_id))
+
+
+def function_artifact_path(data_root: str | Path, analysis_id: str, fid: str) -> Path:
+    """Return canonical full-decomp path after verifying the function owner."""
+    analysis = analysis_id_component(analysis_id)
+    match = _FUNCTION_ID.fullmatch(fid)
+    if match is None:
+        raise UnsafeStoragePath("Invalid function id")
+    try:
+        owner = str(UUID(match.group(1)))
+    except ValueError as exc:
+        raise UnsafeStoragePath("Invalid function id") from exc
+    if owner != analysis:
+        raise UnsafeStoragePath("Function does not belong to this analysis")
+    return resolve_under(artifact_dir_path(data_root, analysis), "funcs", f"{match.group(2)[2:]}.c")
 
 
 def ensure_storage_roots(data_root: str | Path) -> None:

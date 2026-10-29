@@ -1,0 +1,6 @@
+{
+  "functions": [
+    {"address":"0x140001000","name":"main","signature":"int main(void)","size":48,"decompiler_status":"ok","assembly_excerpt":"CALL persist_run_key","decompiled_code":"int main(void) { persist_run_key(); return 0; }"},
+    {"address":"0x140001030","name":"persist_run_key","signature":"LONG persist_run_key(void)","size":76,"decompiler_status":"ok","assembly_excerpt":"CALL RegCreateKeyExW; CALL RegSetValueExW","decompiled_code":"LONG persist_run_key(void) { HKEY key; RegCreateKeyExW(HKEY_CURRENT_USER, L\\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\", 0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL); RegSetValueExW(key, L\\\"ExampleApp\\\", 0, REG_SZ, (const BYTE *)L\\\"C:\\\\Example\\\\example.exe\\\", 46); return 0; }"}
+  ]
+}

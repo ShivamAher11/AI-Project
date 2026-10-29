@@ -12,7 +12,7 @@ from starlette.datastructures import UploadFile
 
 from ...celery_app import celery_app
 from ...db import new_session
-from ...models import Analysis, ExportSymbol, ImportSymbol, Section, StringRecord
+from ...models import Analysis, CallEdge, ExportSymbol, Function, ImportSymbol, Section, StringRecord
 from ...sse import analysis_event_stream, event_response, store_terminal_tombstone
 from ...state_machine import TERMINAL_STATES, transition_analysis
 from ...storage import (
@@ -20,6 +20,7 @@ from ...storage import (
     create_upload_directory,
     remove_analysis_files,
     upload_file_path,
+    function_artifact_path,
 )
 
 router = APIRouter()
@@ -237,10 +238,14 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
         imports = list(session.scalars(select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_id)))
         exports = list(session.scalars(select(ExportSymbol).where(ExportSymbol.analysis_id == analysis_id)))
         strings = list(session.scalars(select(StringRecord).where(StringRecord.analysis_id == analysis_id)))
+        functions = list(session.scalars(select(Function).where(Function.analysis_id == analysis_id)))
+        edges = list(session.scalars(select(CallEdge).where(CallEdge.analysis_id == analysis_id)))
         return {
             "id": str(analysis.id),
             "status": analysis.status,
             "stage": analysis.stage,
+            "source": analysis.ghidra_source,
+            "source_label": "source: fixture" if analysis.ghidra_source == "fixture" else f"source: {analysis.ghidra_source}",
             "static_available": bool(sections or imports or exports or strings or analysis.arch != "unknown"),
             "file": {
                 "sha256": analysis.sha256,
@@ -276,7 +281,49 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
                  "length": row.length, "category": row.category}
                 for row in sorted(strings, key=lambda item: (_address_order(item.offset), item.encoding, item.value))
             ],
+            "functions": [
+                {"id": row.id, "address": row.address, "name": row.name, "size": row.size,
+                 "decompiler_status": row.decompiler_status, "decompiled_excerpt": row.decompiled_excerpt,
+                 "centrality": row.centrality, "artifact_available": bool(row.artifact_path)}
+                for row in sorted(functions, key=lambda item: int(item.address, 16))
+            ],
+            "edges": [{"caller": row.caller_id, "callee": row.callee_id, "type": row.edge_type}
+                      for row in sorted(edges, key=lambda item: (item.caller_id, item.callee_id, item.edge_type))],
         }
+
+
+@router.get("/{analysis_id}/functions")
+def analysis_functions(analysis_id: uuid.UUID):
+    with new_session() as session:
+        _get_analysis(session, analysis_id)
+        rows = list(session.scalars(select(Function).where(Function.analysis_id == analysis_id)))
+        return {"items": [{"id": row.id, "address": row.address, "name": row.name,
+                            "centrality": row.centrality, "decompiler_status": row.decompiler_status,
+                            "decompiled_excerpt": row.decompiled_excerpt,
+                            "artifact_available": bool(row.artifact_path)}
+                           for row in sorted(rows, key=lambda item: int(item.address, 16))], "next_cursor": None}
+
+
+@router.get("/{analysis_id}/functions/{fid}")
+def analysis_function_detail(analysis_id: uuid.UUID, fid: str, load_full: bool = False):
+    with new_session() as session:
+        _get_analysis(session, analysis_id)
+        row = session.get(Function, fid)
+        if row is None or row.analysis_id != analysis_id:
+            raise _problem(404, "FUNCTION_NOT_FOUND", "Function not found.")
+        result = {"id": row.id, "address": row.address, "name": row.name,
+                  "centrality": row.centrality, "decompiler_status": row.decompiler_status,
+                  "decompiled_excerpt": row.decompiled_excerpt, "artifact_available": bool(row.artifact_path)}
+        if load_full and row.artifact_path:
+            try:
+                path = function_artifact_path(os.getenv("DATA_ROOT", "/data"), str(analysis_id), fid)
+                with path.open("rb") as stream:
+                    content = stream.read(500_001)
+            except (UnsafeStoragePath, OSError):
+                raise _problem(404, "FUNCTION_ARTIFACT_NOT_FOUND", "Full decompilation artifact not found.")
+            result["decompiled_full"] = content[:500_000].decode("utf-8", errors="replace")
+            result["artifact_truncated"] = row.artifact_size is not None and row.artifact_size > 500_000
+        return result
 
 
 @router.get("/{analysis_id}/status")

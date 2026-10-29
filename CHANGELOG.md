@@ -2,6 +2,12 @@
 
 Intentional deviations from `docs/SPEC.md` are recorded here. Newest entries first.
 
+## 2026-10-29 — Part 4: fixture-backed call graph and decompilation pipeline
+
+- Added normalized `source` and per-function `centrality` fields to schema v1.0 to expose the explicitly required fixture provenance and PageRank score; §15's example omitted these fields while §§17 and 33 require their behavior.
+- Stored full decompilation artifacts under `/funcs/` as requested by this implementation task; SPEC §17's full-load path text still says `/functions/`. UUID/FID validation and canonical path containment are enforced.
+- Real Ghidra remains a `NotImplementedError` stub until Prompt 11. Fixture output, PageRank, normalized artifact persistence, API/UI source labeling are implemented; detection and AI stages remain placeholders.
+
 ## 2026-10-29 — Part 3: PE x64 static metadata
 
 - Pinned and verified LIEF 1.0.0 against the official release, PyPI package files, and PE Python API; implemented PE x64-only parsing, hashes, sections/entropy, categorized imports/exports, bounded ASCII/UTF-16LE strings, schema-validated normalized JSON, database ingestion, and a static metadata API endpoint.

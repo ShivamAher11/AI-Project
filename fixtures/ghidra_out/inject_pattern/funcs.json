@@ -1,0 +1,6 @@
+{
+  "functions": [
+    {"address":"0x140001000","name":"main","signature":"int main(void)","size":20,"decompiler_status":"ok","assembly_excerpt":"CALL run_demo","decompiled_code":"int main(void) { run_demo(); return 0; }"},
+    {"address":"0x140001020","name":"run_demo","signature":"void run_demo(void)","size":132,"decompiler_status":"ok","assembly_excerpt":"CALL OpenProcess; VirtualAllocEx; WriteProcessMemory; CreateRemoteThread","decompiled_code":"/* Harmless synthetic evaluation pattern; this analyzed sample is never executed by the assistant. */ void run_demo(void) { DWORD pid = GetCurrentProcessId(); HANDLE p = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_CREATE_THREAD, FALSE, pid); if (!p) return; void *remote = VirtualAllocEx(p, NULL, 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE); if (remote) { BYTE marker = 0; SIZE_T written = 0; WriteProcessMemory(p, remote, &marker, sizeof(marker), &written); CreateRemoteThread(p, NULL, 0, (LPTHREAD_START_ROUTINE)remote, NULL, 0, NULL); } CloseHandle(p); }"}
+  ]
+}

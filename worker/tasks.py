@@ -10,11 +10,12 @@ from sqlalchemy import select
 
 from app.celery_app import celery_app
 from app.db import new_session
-from app.models import Analysis, ExportSymbol, ImportSymbol, Section, StringRecord
+from app.models import Analysis, CallEdge, ExportSymbol, Function, ImportSymbol, Section, StringRecord
 from app.state_machine import InvalidStateTransition, transition_analysis
 from app.storage import artifact_dir_path, remove_temporary_artifacts, resolve_under, upload_file_path
 from worker.lief_extract import InvalidBinary, UnsupportedArchitecture, extract_pe, load_import_categories
 from worker.normalize import NormalizationError, normalize_analysis, serialize_normalized
+from worker.ghidra_runner import GhidraRunner
 
 logger = get_task_logger(__name__)
 PLACEHOLDER_DELAY_S = float(os.getenv("PLACEHOLDER_STAGE_DELAY_S", "0.35"))
@@ -84,6 +85,36 @@ def _write_normalized(data_root: str, analysis_id: str, normalized: dict) -> Non
         os.chmod(target, 0o600)
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+def _persist_functions(analysis_id: str, normalized: dict) -> None:
+    analysis_uuid = UUID(analysis_id)
+    with new_session() as session:
+        analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
+        if analysis is None or analysis.status in {"CANCELLED", "FAILED"}:
+            return
+        analysis.ghidra_source = normalized["source"]
+        analysis.decomp_status = "OK" if normalized["source"] == "fixture" and normalized["functions"] else "NOT_RUN"
+        function_rows = []
+        for row in normalized["functions"]:
+            artifact = row["artifact"]
+            function_rows.append(Function(
+                id=row["id"], analysis_id=analysis_uuid, address=row["address"], name=row["name"],
+                signature=row["signature"], size=row["size"], decompiler_status=row["decompiler_status"],
+                centrality=row["centrality"], assembly_excerpt=row["assembly_excerpt"],
+                decompiled_excerpt=row["decompiled_excerpt"],
+                artifact_path=artifact["path"] if artifact else None,
+                artifact_sha256=artifact["sha256"] if artifact else None,
+                artifact_size=artifact["size"] if artifact else None,
+            ))
+        session.add_all(function_rows)
+        # CallEdge has a string FK to Function.id; force function rows first so the
+        # database FK is satisfied independently of ORM relationship ordering.
+        session.flush()
+        for row in normalized["edges"]:
+            session.add(CallEdge(analysis_id=analysis_uuid, caller_id=row["caller"],
+                                 callee_id=row["callee"], edge_type=row["type"]))
+        session.commit()
 
 
 def _touch_heartbeat(analysis_id: str) -> None:
@@ -159,9 +190,12 @@ def analyze(self, analysis_id: str):
         _persist_static_metadata(analysis_id, static)
         time.sleep(PLACEHOLDER_DELAY_S)
 
-        # TODO(spec §14): Ghidra re-analysis is a later optional pipeline step.
         _enter_stage(analysis_id, "RE_ANALYSIS", 35)
-        time.sleep(PLACEHOLDER_DELAY_S)
+        try:
+            ghidra_result = GhidraRunner().run(analysis_id, original_filename)
+        except NotImplementedError:
+            # Honest static-only fallback until Prompt 11 supplies the real runner.
+            ghidra_result = {"source": "none", "functions": [], "edges": []}
 
         _enter_stage(analysis_id, "NORMALIZING", 50)
         with new_session() as session:
@@ -169,7 +203,9 @@ def analyze(self, analysis_id: str):
             if current is None or current.status == "CANCELLED":
                 return {"id": analysis_id, "status": "CANCELLED"}
             created_at = current.created_at
-        normalized = normalize_analysis(static, analysis_id, created_at=created_at)
+        normalized = normalize_analysis(static, analysis_id, created_at=created_at,
+                                        ghidra_result=ghidra_result, data_root=data_root)
+        _persist_functions(analysis_id, normalized)
         _write_normalized(data_root, analysis_id, normalized)
 
         for stage, progress in PIPELINE_STAGES[4:]:
@@ -185,10 +221,14 @@ def analyze(self, analysis_id: str):
             if analysis is None or analysis.status == "CANCELLED":
                 return {"id": analysis_id, "status": "CANCELLED"}
             transition_analysis(analysis, "PARTIAL", 95)
-            analysis.decomp_status = "NOT_RUN"
+            analysis.decomp_status = normalized["decomp_status"]
             analysis.ai_status = "DISABLED"
             analysis.error_code = "PIPELINE_STUBBED"
-            analysis.error_message = "PE x64 static metadata was extracted; Ghidra, detection, and AI stages remain placeholders."
+            analysis.error_message = (
+                "PE x64 static metadata and fixture decompilation output were saved; detection and AI stages remain placeholders."
+                if normalized["source"] == "fixture" else
+                "PE x64 static metadata was saved; real Ghidra, detection, and AI stages were not run."
+            )
             session.commit()
         return {"id": analysis_id, "status": "PARTIAL"}
     except UnsupportedArchitecture as exc:
@@ -201,7 +241,7 @@ def analyze(self, analysis_id: str):
         _mark_failed(analysis_id, "INTERNAL_ERROR", "Analysis output could not be validated. Please re-upload later.")
         return {"id": analysis_id, "status": "FAILED"}
     except Exception:
-        logger.error("analysis_pipeline_failed")
+        logger.exception("analysis_pipeline_failed")
         try:
             _mark_failed(analysis_id, "INTERNAL_ERROR", "Analysis could not be completed. Re-upload to try again.")
         except Exception:

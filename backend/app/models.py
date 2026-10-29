@@ -63,6 +63,7 @@ class Analysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ghidra_source: Mapped[str] = mapped_column(String, nullable=False, default="none")
 
 
 class Section(Base):
@@ -127,6 +128,7 @@ class Function(Base):
     signature: Mapped[str | None] = mapped_column(Text)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     decompiler_status: Mapped[str] = mapped_column(String, nullable=False)
+    centrality: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     assembly_excerpt: Mapped[str | None] = mapped_column(Text)
     decompiled_excerpt: Mapped[str | None] = mapped_column(Text)
     artifact_path: Mapped[str | None] = mapped_column(Text)

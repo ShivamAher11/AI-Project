@@ -187,5 +187,6 @@
   "provenance": {
     "input_hash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     "created_at": "2026-10-29T12:05:00Z"
-  }
+  },
+  "source": "none"
 }

@@ -10,4 +10,4 @@ Verify each item against official documentation or release artifacts at implemen
 | Capstone | Stable exact pin; verify official release | TODO | |
 | PostgreSQL | `postgres:16.15-alpine` | VERIFIED 2026-10-29 | Official PostgreSQL versioning lists 16.15 as the current supported 16.x minor and recommends current minor releases: https://www.postgresql.org/support/versioning/ |
 | Celery | `5.6.3`; worker uses prefork, concurrency 1 | VERIFIED 2026-10-29 | Official stable documentation identifies the 5.6 series: https://docs.celeryq.dev/en/stable/ |
-| networkx | Verify exact version for deterministic graph/PageRank behavior | TODO | |
+| networkx | PageRank centrality on directed direct-call graph | VERIFIED 2026-10-29 | `networkx==3.7`; NetworkX documents `pagerank(G, weight='weight')`; worker passes `weight=None` for unweighted call edges and scales by max score to [0,1]. Official docs: https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.link_analysis.pagerank_alg.pagerank.html ; official PyPI release metadata (Python >=3.12): https://pypi.org/project/networkx/ (3.7, released 2026-09-21). |

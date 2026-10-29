@@ -1,0 +1,6 @@
+{
+  "functions": [
+    {"address":"0x140001000","name":"main","signature":"int main(void)","size":32,"decompiler_status":"ok","assembly_excerpt":"CALL puts","decompiled_code":"int main(void) { puts(\"hello\"); return 0; }"},
+    {"address":"0x140001020","name":"puts","signature":"int puts(const char *)","size":8,"decompiler_status":"ok","assembly_excerpt":"JMP qword ptr [puts]","decompiled_code":"/* imported library call target */"}
+  ]
+}

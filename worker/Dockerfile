@@ -9,7 +9,9 @@ RUN pip install --no-cache-dir -r worker-requirements.txt
 COPY backend/app ./app
 COPY worker ./worker
 COPY tests/worker ./tests/worker
+COPY tests/unit ./tests/unit
 COPY shared ./shared
+COPY fixtures ./fixtures
 COPY rules/import_categories.json ./rules/import_categories.json
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --create-home app \

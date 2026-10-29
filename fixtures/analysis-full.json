@@ -189,7 +189,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.164357765881
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001100",
@@ -200,7 +201,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.304060357818
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001200",
@@ -211,7 +213,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.422805735405
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001300",
@@ -222,7 +225,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.523737167551
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001400",
@@ -233,7 +237,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.609535341541
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001500",
@@ -244,7 +249,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.682468280034
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001600",
@@ -255,7 +261,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.744464022825
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001700",
@@ -266,7 +273,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.79716160439
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001800",
@@ -277,7 +285,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.841954386422
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001900",
@@ -288,7 +297,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.88002689198
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001a00",
@@ -299,7 +309,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.912386115911
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00",
@@ -310,7 +321,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.93988813997
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00",
@@ -321,7 +333,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": "CALL qword ptr [CreateRemoteThread]",
       "decompiled_excerpt": "hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);\nremote = VirtualAllocEx(hProcess, NULL, payloadSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);\nWriteProcessMemory(hProcess, remote, payload, payloadSize, &written);\nCreateRemoteThread(hProcess, NULL, 0, remote, NULL, 0, NULL);",
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.963260756856
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00",
@@ -332,7 +345,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 0.983122701732
     },
     {
       "id": "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001e00",
@@ -343,7 +357,8 @@
       "decompiler_status": "ok",
       "assembly_excerpt": null,
       "decompiled_excerpt": null,
-      "artifact": null
+      "artifact": null,
+      "centrality": 1.0
     }
   ],
   "edges": [
@@ -586,5 +601,6 @@
   "provenance": {
     "input_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
     "created_at": "2026-10-29T12:00:00Z"
-  }
+  },
+  "source": "fixture"
 }

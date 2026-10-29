@@ -1,0 +1,1 @@
+{"edges":[{"caller":"0x140001000","callee":"0x140001030","type":"direct"},{"caller":"0x140001030","callee":"advapi32.dll!RegCreateKeyExW","type":"import"},{"caller":"0x140001030","callee":"advapi32.dll!RegSetValueExW","type":"import"}]}

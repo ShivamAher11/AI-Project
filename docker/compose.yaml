@@ -63,6 +63,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DATA_ROOT: ${DATA_ROOT:-/data}
       PLACEHOLDER_STAGE_DELAY_S: ${PLACEHOLDER_STAGE_DELAY_S:-0.35}
+      GHIDRA_MODE: ${GHIDRA_MODE:-fixture}
     volumes:
       - uploads:/data/uploads
       - artifacts:/data/artifacts
