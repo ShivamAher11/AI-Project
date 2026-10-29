@@ -47,6 +47,10 @@ class Analysis(Base):
     format: Mapped[str] = mapped_column(String, nullable=False)
     arch: Mapped[str] = mapped_column(String, nullable=False)
     bitness: Mapped[int | None] = mapped_column(Integer)
+    endian: Mapped[str] = mapped_column(String(2), nullable=False, default="le")
+    extension_mismatch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    strings_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    possible_packing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     entry_point: Mapped[str | None] = mapped_column(Text)
     toolchain: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     scoring_version: Mapped[str] = mapped_column(String, nullable=False, default="1.0")
@@ -86,6 +90,17 @@ class ImportSymbol(Base):
     ordinal: Mapped[int | None] = mapped_column(Integer)
     address: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(Text)
+
+
+class ExportSymbol(Base):
+    __tablename__ = "export_symbols"
+    __table_args__ = (Index("ix_export_symbols_analysis_name", "analysis_id", "name"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    address: Mapped[str | None] = mapped_column(Text)
+    ordinal: Mapped[int | None] = mapped_column(Integer)
 
 
 class StringRecord(Base):

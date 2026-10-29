@@ -13,6 +13,7 @@ from app.models import (
     AttackMapping,
     CallEdge,
     Evidence,
+    ExportSymbol,
     Finding,
     Function,
     ImportSymbol,
@@ -35,7 +36,7 @@ def engine():
 
 def test_all_spec_tables_are_mapped():
     expected = {
-        "analyses", "sections", "import_symbols", "string_records", "functions",
+        "analyses", "sections", "import_symbols", "export_symbols", "string_records", "functions",
         "call_edges", "signals", "findings", "evidence", "attack_mappings", "ai_runs",
     }
     assert set(Base.metadata.tables) == expected
@@ -69,6 +70,7 @@ def test_analysis_delete_cascades_to_every_child_table(engine):
         session.add_all([
             Section(analysis_id=analysis_id, name=".text", vaddr="0x1000", vsize=16, raw_size=16, perms="R-X", entropy=4.0),
             ImportSymbol(analysis_id=analysis_id, library="kernel32.dll", name="OpenProcess", category="process"),
+            ExportSymbol(analysis_id=analysis_id, name="ExportedFunction", address="0x1100", ordinal=1),
             StringRecord(analysis_id=analysis_id, offset="0x2000", encoding="utf-8", value="Run", length=3),
             Function(id=function_id, analysis_id=analysis_id, address="0x1000", name="entry", size=16, decompiler_status="ok"),
             Signal(id="S-test", analysis_id=analysis_id, rule_id="TEST", function_ids=[function_id], evidence_refs=[str(evidence_id)]),
@@ -86,7 +88,7 @@ def test_analysis_delete_cascades_to_every_child_table(engine):
         session.delete(analysis)
         session.commit()
 
-        for model in (Section, ImportSymbol, StringRecord, Function, CallEdge, Signal, Finding, Evidence, AttackMapping, AIRun):
+        for model in (Section, ImportSymbol, ExportSymbol, StringRecord, Function, CallEdge, Signal, Finding, Evidence, AttackMapping, AIRun):
             remaining = session.scalar(select(func.count()).select_from(model).where(model.analysis_id == analysis_id)) if model is not AttackMapping else session.scalar(
                 select(func.count()).select_from(AttackMapping).where(AttackMapping.finding_id == finding_id)
             )

@@ -5,6 +5,9 @@
   "md5": "0123456789abcdef0123456789abcdef",
   "status": "COMPLETED",
   "decomp_status": "OK",
+  "strings_truncated": false,
+  "possible_packing": false,
+  "packing_note": null,
   "file": {
     "original_filename": "sample-x64.exe",
     "size": 184320,

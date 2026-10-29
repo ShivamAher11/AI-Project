@@ -2,6 +2,14 @@
 
 Intentional deviations from `docs/SPEC.md` are recorded here. Newest entries first.
 
+## 2026-10-29 — Part 3: PE x64 static metadata
+
+- Pinned and verified LIEF 1.0.0 against the official release, PyPI package files, and PE Python API; implemented PE x64-only parsing, hashes, sections/entropy, categorized imports/exports, bounded ASCII/UTF-16LE strings, schema-validated normalized JSON, database ingestion, and a static metadata API endpoint.
+- Added `strings_truncated` to normalized schema and analysis metadata because the required 100,000-row string cap needs a persisted truncation indicator (SPEC §§13, 15, 16).
+- Added an `export_symbols` table because SPEC §13 requires exports as LIEF-owned static truth, although §16 omitted an exports table.
+- `evaluation/src/` contains only the three requested synthetic sources. They are compiled through a Dockerized MinGW-w64 builder and are never executed by the application.
+- ELF, x86-32, ARM, Ghidra, and detector behavior remain deferred; non-PE-x64 input is rejected as FAILED with a safe status message.
+
 ## 2026-10-29 — Part 1: runnable infrastructure and schema
 
 - Implemented Compose services, API health endpoint, initial PostgreSQL schema/migration, normalized schema, and full/partial fixtures.

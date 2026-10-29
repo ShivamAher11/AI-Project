@@ -4,8 +4,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+COPY worker/requirements.txt ./worker-requirements.txt
+RUN pip install --no-cache-dir -r worker-requirements.txt
 COPY backend/app ./app
 COPY worker ./worker
+COPY tests/worker ./tests/worker
+COPY shared ./shared
+COPY rules/import_categories.json ./rules/import_categories.json
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --create-home app \
     && mkdir -p /data/uploads /data/artifacts \

@@ -4,7 +4,7 @@ Evidence-first assistant for static reverse engineering. It analyzes uploaded bi
 
 ## Status
 
-The first vertical slice is in place: binary upload validation and storage, a placeholder Celery pipeline, status/SSE progress, and deletion. The pipeline does not yet analyze binary contents and ends honestly as `PARTIAL`. See `docs/SPEC.md` and `AGENTS.md` for the product contract and permanent project rules.
+The current vertical slice validates uploads, statically extracts PE x64 metadata with pinned LIEF, stores normalized JSON and metadata in PostgreSQL, and exposes upload/status/SSE/static-data/delete APIs. Ghidra, detection, and AI stages are still placeholders, so results end as `PARTIAL`. See `docs/SPEC.md` and `AGENTS.md` for the product contract and permanent project rules.
 
 ## Requirements
 
@@ -34,6 +34,24 @@ To run unit tests against the Compose PostgreSQL database from another terminal:
 
 ```powershell
 docker compose exec api pytest -p no:cacheprovider /tests/unit -q
+docker compose exec -T worker pytest -p no:cacheprovider /app/tests/worker -q
+```
+
+Build the three owned synthetic PE x64 samples (compilation only; the programs are never run by the project):
+
+```powershell
+./evaluation/build-corpus.ps1
+```
+
+The outputs go to ignored `evaluation/build/`. Upload the benign sample with:
+
+```powershell
+$upload = curl.exe -sS -F "file=@evaluation/build/hello_pe_x64.exe;type=application/octet-stream" http://localhost:8000/api/v1/analyses
+$upload
+$id = ($upload | ConvertFrom-Json).id
+curl.exe -sS -N "http://localhost:8000/api/v1/analyses/$id/events"
+curl.exe -sS "http://localhost:8000/api/v1/analyses/$id/static"
+curl.exe -sS -X DELETE "http://localhost:8000/api/v1/analyses/$id"
 ```
 
 To exercise upload, SSE, and deletion in PowerShell, create a tiny fake PE header and run:
@@ -52,4 +70,4 @@ Stop the stack with `docker compose down` (named volumes are retained).
 
 ## Development
 
-The worker and frontend are placeholders. Implement one small end-to-end slice at a time, add tests with each feature, and keep fixture mode usable before enabling the real Ghidra runner.
+The frontend and Ghidra/detection/AI stages remain placeholders. Add tests with each feature and preserve the static-only, evidence-first boundary.

@@ -4,7 +4,7 @@
   "title": "Normalized static analysis v1.0",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "analysis_id", "sha256", "md5", "status", "decomp_status", "file", "toolchain", "versions", "sections", "imports", "exports", "strings", "functions", "edges", "signals", "rule_hits", "findings", "provenance"],
+  "required": ["schema_version", "analysis_id", "sha256", "md5", "status", "decomp_status", "strings_truncated", "possible_packing", "packing_note", "file", "toolchain", "versions", "sections", "imports", "exports", "strings", "functions", "edges", "signals", "rule_hits", "findings", "provenance"],
   "properties": {
     "schema_version": {"const": "1.0"},
     "analysis_id": {"type": "string", "format": "uuid"},
@@ -12,6 +12,9 @@
     "md5": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
     "status": {"enum": ["COMPLETED", "PARTIAL", "FAILED"]},
     "decomp_status": {"enum": ["OK", "FAILED", "TIMEOUT", "NOT_RUN"]},
+    "strings_truncated": {"type": "boolean"},
+    "possible_packing": {"type": "boolean"},
+    "packing_note": {"type": ["string", "null"]},
     "file": {
       "type": "object", "additionalProperties": false,
       "required": ["original_filename", "size", "format", "arch", "bitness", "endian", "entry_point", "extension_mismatch"],

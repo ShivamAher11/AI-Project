@@ -54,7 +54,7 @@ def _terminal_event(snapshot: dict) -> tuple[str, dict]:
     if state == "PARTIAL":
         return name, {
             "reason": snapshot.get("error_message") or "Analysis completed with limited results.",
-            "available": [],
+            "available": ["static"],
         }
     if state == "FAILED":
         return name, {"code": snapshot.get("error_code") or "ANALYSIS_FAILED", "message": snapshot.get("error_message") or "Analysis failed."}

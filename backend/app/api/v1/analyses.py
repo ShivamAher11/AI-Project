@@ -12,7 +12,7 @@ from starlette.datastructures import UploadFile
 
 from ...celery_app import celery_app
 from ...db import new_session
-from ...models import Analysis
+from ...models import Analysis, ExportSymbol, ImportSymbol, Section, StringRecord
 from ...sse import analysis_event_stream, event_response, store_terminal_tombstone
 from ...state_machine import TERMINAL_STATES, transition_analysis
 from ...storage import (
@@ -104,6 +104,10 @@ def _get_analysis(session: Session, analysis_id: uuid.UUID) -> Analysis:
     return analysis
 
 
+def _address_order(value: str | None) -> tuple[bool, int]:
+    return (value is None, int(value, 16) if value else 0)
+
+
 @router.post(
     "",
     status_code=201,
@@ -184,6 +188,9 @@ async def create_analysis(request: Request):
                 format=binary_format,
                 arch="unknown",
                 bitness=None,
+                endian="le",
+                extension_mismatch=mismatch,
+                strings_truncated=False,
                 entry_point=None,
                 toolchain={"ghidra": "NOT_RUN", "jdk": "NOT_RUN", "lief": "NOT_RUN", "capstone": "NOT_RUN"},
                 scoring_version="1.0",
@@ -219,6 +226,57 @@ async def create_analysis(request: Request):
         "extension_mismatch": mismatch,
         "prior_analysis_ids": [str(item) for item in prior_ids],
     }
+
+
+@router.get("/{analysis_id}/static")
+def analysis_static_metadata(analysis_id: uuid.UUID):
+    """Return persisted LIEF metadata as soon as the static-analysis stage ingests it."""
+    with new_session() as session:
+        analysis = _get_analysis(session, analysis_id)
+        sections = list(session.scalars(select(Section).where(Section.analysis_id == analysis_id)))
+        imports = list(session.scalars(select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_id)))
+        exports = list(session.scalars(select(ExportSymbol).where(ExportSymbol.analysis_id == analysis_id)))
+        strings = list(session.scalars(select(StringRecord).where(StringRecord.analysis_id == analysis_id)))
+        return {
+            "id": str(analysis.id),
+            "status": analysis.status,
+            "stage": analysis.stage,
+            "static_available": bool(sections or imports or exports or strings or analysis.arch != "unknown"),
+            "file": {
+                "sha256": analysis.sha256,
+                "md5": analysis.md5,
+                "size": analysis.file_size,
+                "format": analysis.format,
+                "arch": analysis.arch,
+                "bitness": analysis.bitness,
+                "endian": analysis.endian,
+                "entry_point": analysis.entry_point,
+                "extension_mismatch": analysis.extension_mismatch,
+                "strings_truncated": analysis.strings_truncated,
+            },
+            "strings_truncated": analysis.strings_truncated,
+            "possible_packing": analysis.possible_packing,
+            "packing_note": "possible packing - heuristic, not proof" if analysis.possible_packing else None,
+            "sections": [
+                {"name": row.name, "vaddr": row.vaddr, "vsize": row.vsize, "raw_size": row.raw_size,
+                 "perms": row.perms, "entropy": row.entropy}
+                for row in sorted(sections, key=lambda item: (_address_order(item.vaddr), item.name))
+            ],
+            "imports": [
+                {"library": row.library, "name": row.name, "ordinal": row.ordinal, "address": row.address,
+                 "category": row.category}
+                for row in sorted(imports, key=lambda item: (_address_order(item.address), item.library, item.name))
+            ],
+            "exports": [
+                {"name": row.name, "address": row.address, "ordinal": row.ordinal}
+                for row in sorted(exports, key=lambda item: (_address_order(item.address), item.ordinal or 0, item.name))
+            ],
+            "strings": [
+                {"offset": row.offset, "encoding": row.encoding, "value": row.value,
+                 "length": row.length, "category": row.category}
+                for row in sorted(strings, key=lambda item: (_address_order(item.offset), item.encoding, item.value))
+            ],
+        }
 
 
 @router.get("/{analysis_id}/status")

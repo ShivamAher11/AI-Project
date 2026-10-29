@@ -3,6 +3,7 @@
 !.env.example
 data/
 evaluation/corpus/
+evaluation/build/
 evaluation/**/*.exe
 evaluation/**/*.dll
 evaluation/**/*.elf

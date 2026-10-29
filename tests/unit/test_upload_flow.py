@@ -88,14 +88,13 @@ def test_fake_pe_upload_sse_duplicate_ids_and_delete_cascade():
         assert names[0] == "connected"
         assert "stage_change" in names
         assert "progress" in names
-        assert names[-1] == "partial"
-        assert names.index("connected") < names.index("stage_change") < names.index("progress") < names.index("partial")
+        assert names[-1] == "failed"
+        assert names.index("connected") < names.index("stage_change") < names.index("progress") < names.index("failed")
 
         status_response = client.get(f"/api/v1/analyses/{first_id}/status")
         assert status_response.status_code == 200
-        assert status_response.json()["status"] == "PARTIAL"
-        assert status_response.json()["progress"] == 95
-        assert status_response.json()["error"]["code"] == "PIPELINE_STUBBED"
+        assert status_response.json()["status"] == "FAILED"
+        assert status_response.json()["error"]["code"] == "INVALID_BINARY"
 
         deleted = client.delete(f"/api/v1/analyses/{first_id}")
         assert deleted.status_code == 202

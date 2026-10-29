@@ -5,6 +5,9 @@
   "md5": "fedcba9876543210fedcba9876543210",
   "status": "PARTIAL",
   "decomp_status": "TIMEOUT",
+  "strings_truncated": false,
+  "possible_packing": false,
+  "packing_note": null,
   "file": {
     "original_filename": "sample-x64.exe",
     "size": 184320,
