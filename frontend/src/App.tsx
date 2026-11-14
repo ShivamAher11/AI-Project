@@ -1,8 +1,13 @@
+
 import { useEffect, useState } from "react";
 import { OverviewPage } from "./routes/Overview";
 import { UploadPage } from "./routes/Upload";
 import { USE_FIXTURES } from "./lib/api";
 import { FindingsPage } from "./routes/Findings";
+import { FunctionsPage } from "./routes/Functions";
+import { FunctionDetailPage } from "./routes/FunctionDetail";
+import { GraphPage } from "./routes/Graph";
+import { ReportPage } from "./routes/Report";
 
 function useRouter() {
   const [path, setPath] = useState(`${window.location.pathname}${window.location.search}`);
@@ -23,7 +28,17 @@ export function App() {
   const { path, navigate } = useRouter();
   const overviewMatch = path.match(/^\/analyses\/([^/]+)\/overview(?:\?.*)?$/);
   const findingsMatch = path.match(/^\/analyses\/([^/]+)\/findings(?:\?.*)?$/);
-  const analysisId = overviewMatch?.[1] ?? findingsMatch?.[1];
+  const functionsMatch = path.match(/^\/analyses\/([^/]+)\/functions(?:\?.*)?$/);
+  const functionDetailMatch = path.match(/^\/analyses\/([^/]+)\/functions\/([^/?]+)(?:\?.*)?$/);
+  const graphMatch = path.match(/^\/analyses\/([^/]+)\/graph(?:\?.*)?$/);
+  const reportMatch = path.match(/^\/analyses\/([^/]+)\/report(?:\?.*)?$/);
+  const analysisId =
+    overviewMatch?.[1] ??
+    findingsMatch?.[1] ??
+    functionsMatch?.[1] ??
+    graphMatch?.[1] ??
+    reportMatch?.[1] ??
+    functionDetailMatch?.[1];
   return (
     <div className="app-frame">
       <header className="topbar">
@@ -33,7 +48,29 @@ export function App() {
         </a>
         <nav className="header-nav" aria-label="Primary navigation">
           <button onClick={() => navigate("/upload")}>Upload</button>
-          {analysisId && <><button onClick={() => navigate(`/analyses/${analysisId}/overview`)}>Overview</button><button onClick={() => navigate(`/analyses/${analysisId}/findings`)}>Findings</button></>}
+          {analysisId && (
+          <>
+            <button onClick={() => navigate(`/analyses/${analysisId}/overview`)}>
+              Overview
+            </button>
+
+            <button onClick={() => navigate(`/analyses/${analysisId}/findings`)}>
+              Findings
+            </button>
+
+            <button onClick={() => navigate(`/analyses/${analysisId}/functions`)}>
+              Functions
+            </button>
+
+            <button onClick={() => navigate(`/analyses/${analysisId}/graph`)}>
+              Call Graph
+            </button>
+
+            <button onClick={() => navigate(`/analyses/${analysisId}/report`)}>
+              Report
+            </button>
+          </>
+        )}
         </nav>
         <div className="topbar-right">
           {USE_FIXTURES && <span className="mode-pill">Fixture mode</span>}
@@ -47,18 +84,89 @@ export function App() {
             <span className="nav-icon" aria-hidden="true">↑</span> New analysis
           </button>
           <span className="sidebar-label sidebar-later">ANALYSIS</span>
-          {analysisId ? <><button className={`nav-item ${overviewMatch ? "active" : ""}`} onClick={() => navigate(`/analyses/${analysisId}/overview`)}>
-            <span className="nav-icon" aria-hidden="true">◫</span> Overview
-          </button><button className={`nav-item ${findingsMatch ? "active" : ""}`} onClick={() => navigate(`/analyses/${analysisId}/findings`)}>
-            <span className="nav-icon" aria-hidden="true">≡</span> Findings
-          </button></> : <p className="sidebar-hint">Upload a file to start a static review.</p>}
+          
+          {analysisId ? (
+            <>
+              <button
+                className={`nav-item ${overviewMatch ? "active" : ""}`}
+                onClick={() => navigate(`/analyses/${analysisId}/overview`)}
+              >
+                <span className="nav-icon" aria-hidden="true">◫</span>
+                Overview
+              </button>
+
+              <button
+                className={`nav-item ${findingsMatch ? "active" : ""}`}
+                onClick={() => navigate(`/analyses/${analysisId}/findings`)}
+              >
+                <span className="nav-icon" aria-hidden="true">≡</span>
+                Findings
+              </button>
+
+              <button
+                className={`nav-item ${functionsMatch ? "active" : ""}`}
+                onClick={() => navigate(`/analyses/${analysisId}/functions`)}
+              >
+                <span className="nav-icon" aria-hidden="true">ƒ</span>
+                Functions
+              </button>
+
+              <button
+                className={`nav-item ${graphMatch ? "active" : ""}`}
+                onClick={() => navigate(`/analyses/${analysisId}/graph`)}
+              >
+                <span className="nav-icon" aria-hidden="true">◎</span>
+                Call Graph
+              </button>
+
+              <button
+                className={`nav-item ${reportMatch ? "active" : ""}`}
+                onClick={() => navigate(`/analyses/${analysisId}/report`)}
+              >
+                <span className="nav-icon" aria-hidden="true">▤</span>
+                Report
+              </button>
+            </>
+          ) : (
+            <p className="sidebar-hint">
+              Upload a file to start a static review.
+            </p>
+          )}
+
           <div className="sidebar-footer">Static analysis only<br />No files are executed.</div>
         </aside>
-        <main className="main-pane">
-          {overviewMatch
-            ? <OverviewPage analysisId={decodeURIComponent(overviewMatch[1])} navigate={navigate} />
-            : findingsMatch ? <FindingsPage analysisId={decodeURIComponent(findingsMatch[1])} />
-            : <UploadPage navigate={navigate} />}
+        <main className="main-pane">    
+          {reportMatch ? (
+            <ReportPage
+              analysisId={decodeURIComponent(reportMatch[1])}
+            />
+          ) : graphMatch ? (
+            <GraphPage
+              analysisId={decodeURIComponent(graphMatch[1])}
+            />
+          ) : overviewMatch ? (
+            <OverviewPage
+              analysisId={decodeURIComponent(overviewMatch[1])}
+              navigate={navigate}
+            />
+          ) : findingsMatch ? (
+            <FindingsPage
+              analysisId={decodeURIComponent(findingsMatch[1])}
+            />
+          ) : functionDetailMatch ? (
+            <FunctionDetailPage
+              analysisId={decodeURIComponent(functionDetailMatch[1])}
+              functionId={decodeURIComponent(functionDetailMatch[2])}
+              navigate={navigate}
+            />
+          ) : functionsMatch ? (
+            <FunctionsPage
+              analysisId={decodeURIComponent(functionsMatch[1])}
+              navigate={navigate}
+            />
+          ) : (
+            <UploadPage navigate={navigate} />
+          )}
         </main>
       </div>
     </div>

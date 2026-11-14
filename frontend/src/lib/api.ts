@@ -1,3 +1,4 @@
+
 import fullFixture from "../../../fixtures/analysis-full.json";
 import partialFixture from "../../../fixtures/analysis-partial.json";
 
@@ -202,4 +203,154 @@ export async function getStatus(id: string): Promise<StatusSnapshot> {
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/status`);
   if (!response.ok) throw new Error("Could not read analysis status.");
   return response.json() as Promise<StatusSnapshot>;
+}
+
+
+export interface FunctionView {
+  id: string;
+  address: string;
+  name: string;
+  centrality: number;
+  decompilerStatus: string;
+  decompiledExcerpt: string | null;
+  artifactAvailable: boolean;
+}
+
+export interface FunctionDetailView extends FunctionView {
+  signature?: string | null;
+  size?: number | null;
+  assemblyExcerpt?: string | null;
+  decompiledFull?: string | null;
+  artifactTruncated?: boolean;
+}
+
+// Convert the backend/fixture function format
+// into a consistent frontend format.
+function mapFunction(item: any): FunctionView {
+  return {
+    id: item.id,
+    address: item.address,
+    name: item.name ?? "Unnamed function",
+    centrality: item.centrality ?? 0,
+    decompilerStatus: item.decompiler_status ?? "NOT_RUN",
+    decompiledExcerpt: item.decompiled_excerpt ?? null,
+    artifactAvailable: item.artifact_available ?? Boolean(item.artifact),
+  };
+}
+
+// Retrieve all functions for an analysis.
+export async function getFunctions(
+  analysisId: string
+): Promise<FunctionView[]> {
+  if (USE_FIXTURES) {
+    const data = fixtureFor(analysisId);
+
+    return data.functions.map((item: any) => ({
+      ...mapFunction(item),
+    }));
+  }
+
+  const response = await fetch(
+    `${API_BASE}/analyses/${encodeURIComponent(analysisId)}/functions`
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load functions.");
+  }
+
+  const data = await response.json();
+
+  return (data.items ?? []).map(mapFunction);
+}
+
+// Retrieve details of one function.
+export async function getFunctionDetail(
+  analysisId: string,
+  functionId: string,
+  loadFull = false
+): Promise<FunctionDetailView> {
+  if (USE_FIXTURES) {
+    const data = fixtureFor(analysisId);
+
+    const item = data.functions.find(
+      (fn: any) => fn.id === functionId
+    );
+
+    if (!item) {
+      throw new Error("Function not found.");
+    }
+
+    return {
+      ...mapFunction(item),
+      signature: item.signature ?? null,
+      size: item.size ?? null,
+      assemblyExcerpt: item.assembly_excerpt ?? null,
+      decompiledFull: item.decompiled_excerpt ?? null,
+    };
+  }
+
+  const url =
+    `${API_BASE}/analyses/${encodeURIComponent(analysisId)}` +
+    `/functions/${encodeURIComponent(functionId)}` +
+    (loadFull ? "?load_full=true" : "");
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error("Could not load function details.");
+  }
+
+  const item = await response.json();
+
+  return {
+    ...mapFunction(item),
+    decompiledFull: item.decompiled_full ?? null,
+    artifactTruncated: item.artifact_truncated ?? false,
+  };
+}
+
+export interface CallEdgeView {
+  caller: string;
+  callee: string;
+  type: string;
+}
+
+export interface StaticGraphView {
+  functions: FunctionView[];
+  edges: CallEdgeView[];
+}
+
+// Retrieve function nodes and call relationships for the graph.
+export async function getStaticGraph(
+  analysisId: string
+): Promise<StaticGraphView> {
+  // Fixture mode: use available functions.
+  // Fixtures currently do not provide verified call edges.
+  if (USE_FIXTURES) {
+    const data = fixtureFor(analysisId);
+
+    return {
+      functions: data.functions.map((item: any) => mapFunction(item)),
+      edges: [],
+    };
+  }
+
+  const response = await fetch(
+    `${API_BASE}/analyses/${encodeURIComponent(analysisId)}/static`
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load static graph data.");
+  }
+
+  const data = await response.json();
+
+  return {
+    functions: (data.functions ?? []).map(mapFunction),
+    edges: (data.edges ?? []).map((edge: any) => ({
+      caller: edge.caller,
+      callee: edge.callee,
+      type: edge.type ?? "call",
+    })),
+  };
 }
