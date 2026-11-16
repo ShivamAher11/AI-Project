@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from ...db import new_session
 from ...models import Analysis, AIRun, CallEdge, Evidence, Finding, Function, ImportSymbol, Signal, StringRecord
+router = APIRouter()
 
 
 _AI_CACHE = AICache()
