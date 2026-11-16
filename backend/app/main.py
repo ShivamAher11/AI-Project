@@ -14,11 +14,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import models as _models
 from .api.v1.analyses import router as analyses_router
+from .api.v1.ai import router as ai_router
 from .cleanup import cleanup_on_startup
 from .storage import ensure_storage_roots
 
-
-request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "request_id", default="-"
+)
 
 
 class RequestIdFilter(logging.Filter):
@@ -31,7 +33,9 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         return json.dumps(
             {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
+                "timestamp": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)
+                ),
                 "level": record.levelname,
                 "logger": record.name,
                 "message": record.getMessage(),
@@ -50,6 +54,7 @@ root_logger.addHandler(handler)
 root_logger.setLevel(logging.INFO)
 logger = logging.getLogger("api")
 
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_storage_roots(os.getenv("DATA_ROOT", "/data"))
@@ -57,7 +62,11 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="AI-Assisted Reverse Engineering Assistant", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="AI-Assisted Reverse Engineering Assistant",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 
 class ExactCORSMiddleware(CORSMiddleware):
@@ -66,7 +75,9 @@ class ExactCORSMiddleware(CORSMiddleware):
     def __init__(self, *args, allow_headers, **kwargs):
         super().__init__(*args, allow_headers=allow_headers, **kwargs)
         self.allow_headers = sorted({header.lower() for header in allow_headers})
-        self.preflight_headers["Access-Control-Allow-Headers"] = ", ".join(self.allow_headers)
+        self.preflight_headers["Access-Control-Allow-Headers"] = ", ".join(
+            self.allow_headers
+        )
 
 
 app.add_middleware(
@@ -89,13 +100,23 @@ async def attach_request_id(request: Request, call_next):
         logger.error("unhandled_request_error")
         response = JSONResponse(
             status_code=500,
-            content={"error": {"code": "INTERNAL_ERROR", "message": "An internal error occurred.", "request_id": request_id}},
+            content={
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An internal error occurred.",
+                    "request_id": request_id,
+                }
+            },
         )
     response.headers["X-Request-ID"] = request_id
     logger.info(
         "request_completed",
-        extra={"method": request.method, "path": request.url.path, "status_code": response.status_code,
-               "latency_ms": round((time.perf_counter() - started) * 1000, 2)},
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        },
     )
     request_id_var.reset(token)
     return response
@@ -121,7 +142,13 @@ async def http_error_handler(request: Request, exc: StarletteHTTPException):
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
         status_code=422,
-        content={"error": {"code": "VALIDATION_ERROR", "message": "Request validation failed.", "request_id": request_id_var.get()}},
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed.",
+                "request_id": request_id_var.get(),
+            }
+        },
     )
 
 
@@ -131,3 +158,4 @@ async def health():
 
 
 app.include_router(analyses_router, prefix="/api/v1/analyses", tags=["analyses"])
+app.include_router(ai_router, prefix="/api/v1/ai", tags=["ai"])

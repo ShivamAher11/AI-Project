@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from uuid import UUID
 
-
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS_FIXTURES = {
     "hello_pe_x64.exe": "hello_pe_x64",
@@ -34,9 +33,15 @@ class GhidraRunner:
         corpus_key = CORPUS_FIXTURES.get(Path(original_filename).name.lower())
         if corpus_key:
             directory = self.fixture_root / "ghidra_out" / corpus_key
-            functions = json.loads((directory / "funcs.json").read_text(encoding="utf-8"))["functions"]
-            edges = json.loads((directory / "edges.json").read_text(encoding="utf-8"))["edges"]
+            functions = json.loads(
+                (directory / "funcs.json").read_text(encoding="utf-8")
+            )["functions"]
+            edges = json.loads((directory / "edges.json").read_text(encoding="utf-8"))[
+                "edges"
+            ]
         else:
-            generic = json.loads((self.fixture_root / "analysis-full.json").read_text(encoding="utf-8"))
+            generic = json.loads(
+                (self.fixture_root / "analysis-full.json").read_text(encoding="utf-8")
+            )
             functions, edges = generic["functions"], generic["edges"]
         return {"source": "fixture", "functions": functions, "edges": edges}

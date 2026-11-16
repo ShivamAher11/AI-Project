@@ -26,7 +26,9 @@ PE32_PLUS = 0x20B
 IMAGE_SCN_MEM_EXECUTE = 0x20000000
 IMAGE_SCN_MEM_READ = 0x40000000
 IMAGE_SCN_MEM_WRITE = 0x80000000
-CATEGORY_LOOKUP = Path(__file__).resolve().parents[1] / "rules" / "import_categories.json"
+CATEGORY_LOOKUP = (
+    Path(__file__).resolve().parents[1] / "rules" / "import_categories.json"
+)
 
 
 def load_import_categories(path: Path = CATEGORY_LOOKUP) -> dict[str, str]:
@@ -39,7 +41,9 @@ def shannon_entropy(data: bytes) -> float:
         return 0.0
     counts = Counter(data)
     length = len(data)
-    entropy = -sum((count / length) * math.log2(count / length) for count in counts.values())
+    entropy = -sum(
+        (count / length) * math.log2(count / length) for count in counts.values()
+    )
     return round(entropy, 6)
 
 
@@ -81,8 +85,13 @@ def _category(name: str, categories: dict[str, str]) -> str:
     return categories.get(name.casefold(), "other")
 
 
-def _extract_pe_content(path: str | Path, *, original_filename: str = "upload", extension_mismatch: bool = False,
-                        categories: dict[str, str] | None = None) -> dict:
+def _extract_pe_content(
+    path: str | Path,
+    *,
+    original_filename: str = "upload",
+    extension_mismatch: bool = False,
+    categories: dict[str, str] | None = None,
+) -> dict:
     """Parse PE x64 metadata from disk and return JSON-compatible static records."""
     source = Path(path)
     sha256, md5, size = _hash_file(source)
@@ -92,15 +101,21 @@ def _extract_pe_content(path: str | Path, *, original_filename: str = "upload", 
         config.parse_exports = True
         binary = lief.PE.parse(source, config)
     except Exception as exc:
-        raise InvalidBinary("The uploaded file could not be parsed as a valid PE binary.") from exc
+        raise InvalidBinary(
+            "The uploaded file could not be parsed as a valid PE binary."
+        ) from exc
     if binary is None:
-        raise InvalidBinary("The uploaded file could not be parsed as a valid PE binary.")
+        raise InvalidBinary(
+            "The uploaded file could not be parsed as a valid PE binary."
+        )
 
     machine = int(binary.header.machine)
     magic = int(binary.optional_header.magic)
     if machine != MACHINE_AMD64 or magic != PE32_PLUS:
         # TODO(spec §13): add ELF, x86-32, and ARM only after explicit scope approval.
-        raise UnsupportedArchitecture("Only PE x64 executables and libraries are supported currently.")
+        raise UnsupportedArchitecture(
+            "Only PE x64 executables and libraries are supported currently."
+        )
 
     imagebase = int(binary.optional_header.imagebase)
     entry_rva = int(binary.optional_header.addressof_entrypoint)
@@ -124,7 +139,11 @@ def _extract_pe_content(path: str | Path, *, original_filename: str = "upload", 
         library_name = _decode_name(library.name).lower()
         for entry in library.entries:
             ordinal = int(entry.ordinal) if entry.is_ordinal else None
-            name = _decode_name(entry.name) if not entry.is_ordinal else f"ordinal_{ordinal}"
+            name = (
+                _decode_name(entry.name)
+                if not entry.is_ordinal
+                else f"ordinal_{ordinal}"
+            )
             key = (library_name.casefold(), name.casefold())
             record = {
                 "library": library_name,
@@ -134,31 +153,51 @@ def _extract_pe_content(path: str | Path, *, original_filename: str = "upload", 
                 "category": _category(name, categories),
             }
             existing = imports_by_key.get(key)
-            if existing is None or (existing["address"] is None and record["address"] is not None):
+            if existing is None or (
+                existing["address"] is None and record["address"] is not None
+            ):
                 imports_by_key[key] = record
-    imports = sorted(imports_by_key.values(), key=lambda item: (item["address"] is None,
-                                                                int(item["address"] or "0", 16),
-                                                                item["library"], item["name"]))
+    imports = sorted(
+        imports_by_key.values(),
+        key=lambda item: (
+            item["address"] is None,
+            int(item["address"] or "0", 16),
+            item["library"],
+            item["name"],
+        ),
+    )
 
     exports = []
     export_directory = binary.get_export()
     if export_directory is not None:
         for entry in export_directory.entries:
-            exports.append({
-                "name": _decode_name(entry.name),
-                "address": _hex_or_none(imagebase + int(entry.address)),
-                "ordinal": int(entry.ordinal) if entry.ordinal is not None else None,
-            })
-    exports.sort(key=lambda item: (item["address"] is None,
-                                   int(item["address"] or "0", 16), item["ordinal"] or 0, item["name"]))
+            exports.append(
+                {
+                    "name": _decode_name(entry.name),
+                    "address": _hex_or_none(imagebase + int(entry.address)),
+                    "ordinal": (
+                        int(entry.ordinal) if entry.ordinal is not None else None
+                    ),
+                }
+            )
+    exports.sort(
+        key=lambda item: (
+            item["address"] is None,
+            int(item["address"] or "0", 16),
+            item["ordinal"] or 0,
+            item["name"],
+        )
+    )
 
     with source.open("rb") as stream:
         file_bytes = stream.read()
     extracted_strings, strings_truncated = extract_strings(file_bytes)
     high_entropy_section = any(section["entropy"] >= 7.5 for section in sections)
     abnormal_section = any(
-        "W" in section["perms"] and "X" in section["perms"]
-        or section["raw_size"] > 0 and section["vsize"] != section["raw_size"]
+        "W" in section["perms"]
+        and "X" in section["perms"]
+        or section["raw_size"] > 0
+        and section["vsize"] != section["raw_size"]
         for section in sections
     )
     return {
@@ -178,18 +217,33 @@ def _extract_pe_content(path: str | Path, *, original_filename: str = "upload", 
         "strings": extracted_strings,
         "strings_truncated": strings_truncated,
         "possible_packing": high_entropy_section and abnormal_section,
-        "packing_note": "possible packing - heuristic, not proof" if high_entropy_section and abnormal_section else None,
+        "packing_note": (
+            "possible packing - heuristic, not proof"
+            if high_entropy_section and abnormal_section
+            else None
+        ),
     }
 
 
-def extract_pe(path: str | Path, *, original_filename: str = "upload", extension_mismatch: bool = False,
-               categories: dict[str, str] | None = None) -> dict:
+def extract_pe(
+    path: str | Path,
+    *,
+    original_filename: str = "upload",
+    extension_mismatch: bool = False,
+    categories: dict[str, str] | None = None,
+) -> dict:
     try:
-        return _extract_pe_content(path, original_filename=original_filename,
-                                   extension_mismatch=extension_mismatch, categories=categories)
+        return _extract_pe_content(
+            path,
+            original_filename=original_filename,
+            extension_mismatch=extension_mismatch,
+            categories=categories,
+        )
     except (InvalidBinary, UnsupportedArchitecture):
         raise
     except OSError:
         raise
     except Exception as exc:
-        raise InvalidBinary("The uploaded file could not be parsed as a valid PE binary.") from exc
+        raise InvalidBinary(
+            "The uploaded file could not be parsed as a valid PE binary."
+        ) from exc

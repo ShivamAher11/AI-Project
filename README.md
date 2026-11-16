@@ -14,7 +14,9 @@ The current vertical slice validates uploads, statically extracts PE x64 metadat
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set local values as needed. Cloud LLM access is disabled by default; never enable it without explicit consent.
+Copy `.env.example` to `.env`. The template is preconfigured for the supplied ngrok Ollama endpoint and Qwen model. Add your token to the local `.env` file as `LLM_API_KEY=your-token-here` (use your own current token; never commit `.env`). The template sets `CONSENT_CLOUD_LLM=true` because this setup was explicitly requested. The API still disables AI unless consent, a key, a model, and an allowlisted endpoint are all present.
+
+The API-side endpoint is OpenAI-compatible. After the stack starts, verify configuration with `GET http://localhost:8000/api/v1/ai/status` and test a real model completion with `POST http://localhost:8000/api/v1/ai/test`. Completed analyses also show an **Explain findings** control on the Overview page. This is an on-demand explanation only; deterministic scoring/findings remain unchanged, and raw uploaded binaries are never sent to the model. The worker does not call ngrok or the model directly.
 
 ## Run
 

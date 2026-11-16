@@ -5,28 +5,43 @@ from pathlib import Path
 import pytest
 
 from worker.ghidra_runner import GhidraRunner
-from worker.normalize import calculate_centrality, normalize_analysis, serialize_normalized
+from worker.normalize import (
+    calculate_centrality,
+    normalize_analysis,
+    serialize_normalized,
+)
 from app.db import new_session
 from app.models import Analysis, Section
 from worker.tasks import _persist_functions, _persist_static_metadata
 from sqlalchemy import select
 import uuid
 
-
 ROOT = Path(__file__).parents[2]
 ANALYSIS_ID = "a1b2c3d4-e5f6-4789-8123-456789abcdef"
 
 
 def _static():
-    fixture = json.loads((ROOT / "fixtures/analysis-full.json").read_text(encoding="utf-8-sig"))
+    fixture = json.loads(
+        (ROOT / "fixtures/analysis-full.json").read_text(encoding="utf-8-sig")
+    )
     return {
-        "sha256": fixture["sha256"], "md5": fixture["md5"], "size": fixture["file"]["size"],
-        "original_filename": fixture["file"]["original_filename"], "format": fixture["file"]["format"],
-        "arch": fixture["file"]["arch"], "bitness": fixture["file"]["bitness"],
-        "endian": fixture["file"]["endian"], "entry_point": fixture["file"]["entry_point"],
-        "extension_mismatch": False, "strings_truncated": False, "possible_packing": False,
-        "packing_note": None, "sections": fixture["sections"], "imports": fixture["imports"],
-        "exports": fixture["exports"], "strings": fixture["strings"],
+        "sha256": fixture["sha256"],
+        "md5": fixture["md5"],
+        "size": fixture["file"]["size"],
+        "original_filename": fixture["file"]["original_filename"],
+        "format": fixture["file"]["format"],
+        "arch": fixture["file"]["arch"],
+        "bitness": fixture["file"]["bitness"],
+        "endian": fixture["file"]["endian"],
+        "entry_point": fixture["file"]["entry_point"],
+        "extension_mismatch": False,
+        "strings_truncated": False,
+        "possible_packing": False,
+        "packing_note": None,
+        "sections": fixture["sections"],
+        "imports": fixture["imports"],
+        "exports": fixture["exports"],
+        "strings": fixture["strings"],
     }
 
 
@@ -44,15 +59,23 @@ def test_pagerank_uses_only_direct_edges_and_normalizes():
 
 
 def test_fixture_runner_normalizes_and_roundtrips_deterministically(tmp_path):
-    result = GhidraRunner(fixture_root=ROOT / "fixtures").run(ANALYSIS_ID, "hello_pe_x64.exe")
+    result = GhidraRunner(fixture_root=ROOT / "fixtures").run(
+        ANALYSIS_ID, "hello_pe_x64.exe"
+    )
     assert result["source"] == "fixture"
     normalized = normalize_analysis(
-        _static(), ANALYSIS_ID, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ghidra_result=result, data_root=str(tmp_path),
+        _static(),
+        ANALYSIS_ID,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ghidra_result=result,
+        data_root=str(tmp_path),
     )
     again = normalize_analysis(
-        _static(), ANALYSIS_ID, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ghidra_result=result, data_root=str(tmp_path),
+        _static(),
+        ANALYSIS_ID,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ghidra_result=result,
+        data_root=str(tmp_path),
     )
     assert serialize_normalized(normalized) == serialize_normalized(again)
     assert normalized["source"] == "fixture"
@@ -66,9 +89,13 @@ def test_fixture_runner_normalizes_and_roundtrips_deterministically(tmp_path):
 
 def test_partial_result_keeps_static_metadata_and_has_no_fake_functions(tmp_path):
     static = _static()
-    normalized = normalize_analysis(static, ANALYSIS_ID, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                                    ghidra_result={"source": "none", "functions": [], "edges": []},
-                                    data_root=str(tmp_path))
+    normalized = normalize_analysis(
+        static,
+        ANALYSIS_ID,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ghidra_result={"source": "none", "functions": [], "edges": []},
+        data_root=str(tmp_path),
+    )
     assert normalized["status"] == "PARTIAL"
     assert normalized["source"] == "none"
     assert normalized["sections"] == static["sections"]
@@ -79,16 +106,30 @@ def test_partial_result_keeps_static_metadata_and_has_no_fake_functions(tmp_path
 def test_partial_pipeline_keeps_already_persisted_static_rows():
     if not os.getenv("DATABASE_URL"):
         import pytest
+
         pytest.skip("DATABASE_URL is required for the PostgreSQL persistence check")
     analysis_id = str(uuid.uuid4())
     static = _static()
     with new_session() as session:
-        session.add(Analysis(
-            id=uuid.UUID(analysis_id), status="STATIC_ANALYSIS", stage="STATIC_ANALYSIS", progress=15,
-            original_filename="fixture.exe", sha256=static["sha256"], md5=static["md5"], file_size=static["size"],
-            format="pe", arch="x64", bitness=64, entry_point=static["entry_point"], toolchain={},
-            decomp_status="NOT_RUN", ai_status="NOT_RUN",
-        ))
+        session.add(
+            Analysis(
+                id=uuid.UUID(analysis_id),
+                status="STATIC_ANALYSIS",
+                stage="STATIC_ANALYSIS",
+                progress=15,
+                original_filename="fixture.exe",
+                sha256=static["sha256"],
+                md5=static["md5"],
+                file_size=static["size"],
+                format="pe",
+                arch="x64",
+                bitness=64,
+                entry_point=static["entry_point"],
+                toolchain={},
+                decomp_status="NOT_RUN",
+                ai_status="NOT_RUN",
+            )
+        )
         session.commit()
     _persist_static_metadata(analysis_id, static)
     _persist_functions(analysis_id, {"source": "none", "functions": [], "edges": []})
@@ -96,7 +137,12 @@ def test_partial_pipeline_keeps_already_persisted_static_rows():
         analysis = session.get(Analysis, uuid.UUID(analysis_id))
         analysis.status = "PARTIAL"
         analysis.stage = "PARTIAL"
-        assert session.scalar(select(Section).where(Section.analysis_id == uuid.UUID(analysis_id))) is not None
+        assert (
+            session.scalar(
+                select(Section).where(Section.analysis_id == uuid.UUID(analysis_id))
+            )
+            is not None
+        )
         session.commit()
         session.delete(analysis)
         session.commit()

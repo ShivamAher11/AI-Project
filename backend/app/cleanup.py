@@ -20,7 +20,11 @@ def cleanup_on_startup() -> None:
     expired_before = now - timedelta(hours=ttl_hours)
     stale_before = now - timedelta(seconds=90)
     with new_session() as session:
-        expired = list(session.scalars(select(Analysis).where(Analysis.created_at < expired_before)))
+        expired = list(
+            session.scalars(
+                select(Analysis).where(Analysis.created_at < expired_before)
+            )
+        )
         for analysis in expired:
             try:
                 remove_analysis_files(data_root, str(analysis.id))
@@ -41,6 +45,8 @@ def cleanup_on_startup() -> None:
             analysis.status = "FAILED"
             analysis.stage = "FAILED"
             analysis.error_code = "WORKER_STALE"
-            analysis.error_message = "The worker stopped reporting progress. Re-upload to try again."
+            analysis.error_message = (
+                "The worker stopped reporting progress. Re-upload to try again."
+            )
             analysis.completed_at = now
         session.commit()

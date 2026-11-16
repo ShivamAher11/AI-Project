@@ -36,9 +36,9 @@ def _read_analysis(analysis_id: str) -> dict | None:
 
 def _redis_terminal(analysis_id: str) -> dict | None:
     try:
-        value = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True).get(
-            f"analysis-terminal:{analysis_id}"
-        )
+        value = Redis.from_url(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+        ).get(f"analysis-terminal:{analysis_id}")
         return json.loads(value) if value else None
     except Exception:
         return None
@@ -53,11 +53,15 @@ def _terminal_event(snapshot: dict) -> tuple[str, dict]:
     name = TERMINAL_EVENT[state]
     if state == "PARTIAL":
         return name, {
-            "reason": snapshot.get("error_message") or "Analysis completed with limited results.",
+            "reason": snapshot.get("error_message")
+            or "Analysis completed with limited results.",
             "available": ["static"],
         }
     if state == "FAILED":
-        return name, {"code": snapshot.get("error_code") or "ANALYSIS_FAILED", "message": snapshot.get("error_message") or "Analysis failed."}
+        return name, {
+            "code": snapshot.get("error_code") or "ANALYSIS_FAILED",
+            "message": snapshot.get("error_message") or "Analysis failed.",
+        }
     if state == "CANCELLED":
         return name, {"id": snapshot["id"]}
     return name, {"id": snapshot["id"], "status": state}
@@ -70,13 +74,27 @@ async def analysis_event_stream(analysis_id: str) -> AsyncIterator[str]:
     if snapshot is None:
         tombstone = _redis_terminal(analysis_id)
         if tombstone:
-            yield _format_event("connected", {"id": analysis_id, "status": "CANCELLED", "stage": "CANCELLED", "progress": 0}, seq := seq + 1)
+            yield _format_event(
+                "connected",
+                {
+                    "id": analysis_id,
+                    "status": "CANCELLED",
+                    "stage": "CANCELLED",
+                    "progress": 0,
+                },
+                seq := seq + 1,
+            )
             yield _format_event(tombstone["event"], tombstone["data"], seq := seq + 1)
         return
 
     yield _format_event(
         "connected",
-        {"id": snapshot["id"], "status": snapshot["status"], "stage": snapshot["stage"], "progress": snapshot["progress"]},
+        {
+            "id": snapshot["id"],
+            "status": snapshot["status"],
+            "stage": snapshot["stage"],
+            "progress": snapshot["progress"],
+        },
         seq := seq + 1,
     )
     if snapshot["status"] in TERMINAL_EVENT:
@@ -84,8 +102,20 @@ async def analysis_event_stream(analysis_id: str) -> AsyncIterator[str]:
         yield _format_event(name, data, seq := seq + 1)
         return
 
-    yield _format_event("stage_change", {"stage": snapshot["stage"], "progress": snapshot["progress"]}, seq := seq + 1)
-    yield _format_event("progress", {"stage": snapshot["stage"], "progress": snapshot["progress"], "detail": "Current analysis stage."}, seq := seq + 1)
+    yield _format_event(
+        "stage_change",
+        {"stage": snapshot["stage"], "progress": snapshot["progress"]},
+        seq := seq + 1,
+    )
+    yield _format_event(
+        "progress",
+        {
+            "stage": snapshot["stage"],
+            "progress": snapshot["progress"],
+            "detail": "Current analysis stage.",
+        },
+        seq := seq + 1,
+    )
     last_stage = snapshot["stage"]
     last_progress = snapshot["progress"]
     last_ping = time.monotonic()
@@ -96,16 +126,26 @@ async def analysis_event_stream(analysis_id: str) -> AsyncIterator[str]:
         if current is None:
             tombstone = _redis_terminal(analysis_id)
             if tombstone:
-                yield _format_event(tombstone["event"], tombstone["data"], seq := seq + 1)
+                yield _format_event(
+                    tombstone["event"], tombstone["data"], seq := seq + 1
+                )
             return
 
         if current["stage"] != last_stage:
-            yield _format_event("stage_change", {"stage": current["stage"], "progress": current["progress"]}, seq := seq + 1)
+            yield _format_event(
+                "stage_change",
+                {"stage": current["stage"], "progress": current["progress"]},
+                seq := seq + 1,
+            )
             last_stage = current["stage"]
         if current["progress"] != last_progress:
             yield _format_event(
                 "progress",
-                {"stage": current["stage"], "progress": current["progress"], "detail": "Stage progress updated."},
+                {
+                    "stage": current["stage"],
+                    "progress": current["progress"],
+                    "detail": "Stage progress updated.",
+                },
                 seq := seq + 1,
             )
             last_progress = current["progress"]
@@ -129,7 +169,9 @@ def event_response(iterator: AsyncIterator[str]) -> StreamingResponse:
 
 
 def store_terminal_tombstone(analysis_id: str, event_name: str, data: dict) -> None:
-    client = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+    client = Redis.from_url(
+        os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+    )
     client.setex(
         f"analysis-terminal:{analysis_id}",
         60,

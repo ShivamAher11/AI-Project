@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { OverviewPage } from "./routes/Overview";
+import { FunctionDetailPage } from "./routes/FunctionDetail";
 import { UploadPage } from "./routes/Upload";
 import { USE_FIXTURES } from "./lib/api";
 import { FindingsPage } from "./routes/Findings";
@@ -23,7 +24,8 @@ export function App() {
   const { path, navigate } = useRouter();
   const overviewMatch = path.match(/^\/analyses\/([^/]+)\/overview(?:\?.*)?$/);
   const findingsMatch = path.match(/^\/analyses\/([^/]+)\/findings(?:\?.*)?$/);
-  const analysisId = overviewMatch?.[1] ?? findingsMatch?.[1];
+  const functionMatch = path.match(/^\/analyses\/([^/]+)\/functions\/([^/]+)(?:\?.*)?$/);
+  const analysisId = overviewMatch?.[1] ?? findingsMatch?.[1] ?? functionMatch?.[1];
   return (
     <div className="app-frame">
       <header className="topbar">
@@ -58,6 +60,7 @@ export function App() {
           {overviewMatch
             ? <OverviewPage analysisId={decodeURIComponent(overviewMatch[1])} navigate={navigate} />
             : findingsMatch ? <FindingsPage analysisId={decodeURIComponent(findingsMatch[1])} />
+            : functionMatch ? <FunctionDetailPage analysisId={decodeURIComponent(functionMatch[1])} fid={decodeURIComponent(functionMatch[2])} navigate={navigate} />
             : <UploadPage navigate={navigate} />}
         </main>
       </div>

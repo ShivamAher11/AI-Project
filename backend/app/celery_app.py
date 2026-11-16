@@ -2,7 +2,6 @@ import os
 
 from celery import Celery
 
-
 celery_app = Celery(
     "analysis_jobs",
     broker=os.getenv("REDIS_URL", "redis://localhost:6379/0"),

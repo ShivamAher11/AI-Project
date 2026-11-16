@@ -12,8 +12,18 @@ from starlette.datastructures import UploadFile
 
 from ...celery_app import celery_app
 from ...db import new_session
-from ...models import (Analysis, AttackMapping, CallEdge, Evidence, ExportSymbol, Finding, Function,
-                       ImportSymbol, Section, StringRecord)
+from ...models import (
+    Analysis,
+    AttackMapping,
+    CallEdge,
+    Evidence,
+    ExportSymbol,
+    Finding,
+    Function,
+    ImportSymbol,
+    Section,
+    StringRecord,
+)
 from ...sse import analysis_event_stream, event_response, store_terminal_tombstone
 from ...state_machine import TERMINAL_STATES, transition_analysis
 from ...storage import (
@@ -41,7 +51,9 @@ def _problem(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
 
 
-async def _stream_upload(upload: UploadFile, target: Path, max_bytes: int) -> tuple[int, str, str, bytes]:
+async def _stream_upload(
+    upload: UploadFile, target: Path, max_bytes: int
+) -> tuple[int, str, str, bytes]:
     """Copy the multipart file in bounded chunks; never use the client name as a path."""
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -111,24 +123,45 @@ def _address_order(value: str | None) -> tuple[bool, int]:
 
 
 def _finding_card(session: Session, row: Finding) -> dict:
-    evidence = sorted(session.scalars(select(Evidence).where(Evidence.finding_id == row.id)),
-                      key=lambda item: (item.source_type, item.source_id, str(item.id)))
-    mappings = sorted(session.scalars(select(AttackMapping).where(AttackMapping.finding_id == row.id)),
-                      key=lambda item: item.technique_id)
+    evidence = sorted(
+        session.scalars(select(Evidence).where(Evidence.finding_id == row.id)),
+        key=lambda item: (item.source_type, item.source_id, str(item.id)),
+    )
+    mappings = sorted(
+        session.scalars(
+            select(AttackMapping).where(AttackMapping.finding_id == row.id)
+        ),
+        key=lambda item: item.technique_id,
+    )
     return {
-        "id": str(row.id), "title": row.title, "severity": row.severity.title(),
-        "confidence": row.confidence, "confidence_score": row.confidence_score,
-        "description": row.description, "alternative_explanation": row.alternative,
-        "score_contribution": row.score_contribution, "group_id": row.group_id,
+        "id": str(row.id),
+        "title": row.title,
+        "severity": row.severity.title(),
+        "confidence": row.confidence,
+        "confidence_score": row.confidence_score,
+        "description": row.description,
+        "alternative_explanation": row.alternative,
+        "score_contribution": row.score_contribution,
+        "group_id": row.group_id,
         "attack_mappings": [
-            {"technique_id": item.technique_id, "name": item.technique_name,
-             "label": "Likely" if item.confidence_score >= 0.8 else "Possible",
-             "confidence_score": item.confidence_score}
-            for item in mappings if item.confidence_score >= 0.5
+            {
+                "technique_id": item.technique_id,
+                "name": item.technique_name,
+                "label": "Likely" if item.confidence_score >= 0.8 else "Possible",
+                "confidence_score": item.confidence_score,
+            }
+            for item in mappings
+            if item.confidence_score >= 0.5
         ],
         "evidence": [
-            {"id": str(item.id), "source_type": item.source_type, "source_id": item.source_id,
-             "excerpt": item.excerpt, "offset_or_address": item.offset_or_address, "reason": item.reason}
+            {
+                "id": str(item.id),
+                "source_type": item.source_type,
+                "source_id": item.source_id,
+                "excerpt": item.excerpt,
+                "offset_or_address": item.offset_or_address,
+                "reason": item.reason,
+            }
             for item in evidence
         ],
     }
@@ -155,7 +188,9 @@ def _finding_card(session: Session, row: Finding) -> dict:
 async def create_analysis(request: Request):
     max_bytes = MAX_FILE_BYTES
     if _content_length_too_large(request.headers.get("content-length"), max_bytes):
-        raise _problem(413, "PAYLOAD_TOO_LARGE", f"File too large. Max {MAX_FILE_MB} MB.")
+        raise _problem(
+            413, "PAYLOAD_TOO_LARGE", f"File too large. Max {MAX_FILE_MB} MB."
+        )
 
     # TODO(spec §12): raw-body ASGI receive counting is deferred; ingress and this file stream counter bound uploads.
     try:
@@ -174,7 +209,9 @@ async def create_analysis(request: Request):
         size, sha256, md5, prefix = await _stream_upload(file, target, max_bytes)
     except UploadTooLarge:
         remove_analysis_files(data_root, str(analysis_id))
-        raise _problem(413, "PAYLOAD_TOO_LARGE", f"File too large. Max {MAX_FILE_MB} MB.")
+        raise _problem(
+            413, "PAYLOAD_TOO_LARGE", f"File too large. Max {MAX_FILE_MB} MB."
+        )
     except Exception:
         remove_analysis_files(data_root, str(analysis_id))
         raise
@@ -188,7 +225,11 @@ async def create_analysis(request: Request):
     binary_format = _detect_format(prefix)
     if binary_format is None:
         remove_analysis_files(data_root, str(analysis_id))
-        raise _problem(400, "UNSUPPORTED_FORMAT", "Unsupported or invalid binary. Upload a valid PE or ELF.")
+        raise _problem(
+            400,
+            "UNSUPPORTED_FORMAT",
+            "Unsupported or invalid binary. Upload a valid PE or ELF.",
+        )
 
     original_filename = (file.filename or "upload").replace("\x00", "")[:255]
     mismatch = _extension_mismatch(original_filename, binary_format)
@@ -218,7 +259,12 @@ async def create_analysis(request: Request):
                 extension_mismatch=mismatch,
                 strings_truncated=False,
                 entry_point=None,
-                toolchain={"ghidra": "NOT_RUN", "jdk": "NOT_RUN", "lief": "NOT_RUN", "capstone": "NOT_RUN"},
+                toolchain={
+                    "ghidra": "NOT_RUN",
+                    "jdk": "NOT_RUN",
+                    "lief": "NOT_RUN",
+                    "capstone": "NOT_RUN",
+                },
                 scoring_version="1.0",
                 rule_set_version="1.0",
                 schema_version="1.0",
@@ -235,14 +281,21 @@ async def create_analysis(request: Request):
 
     response_status = "CREATED"
     try:
-        celery_app.send_task("worker.tasks.analyze", args=[str(analysis_id)], task_id=str(analysis_id), queue="analyses")
+        celery_app.send_task(
+            "worker.tasks.analyze",
+            args=[str(analysis_id)],
+            task_id=str(analysis_id),
+            queue="analyses",
+        )
     except Exception:
         with new_session() as session:
             failed = session.get(Analysis, analysis_id)
             if failed is not None:
                 transition_analysis(failed, "FAILED")
                 failed.error_code = "QUEUE_UNAVAILABLE"
-                failed.error_message = "The analysis queue is unavailable. Try again shortly."
+                failed.error_message = (
+                    "The analysis queue is unavailable. Try again shortly."
+                )
                 session.commit()
                 response_status = "FAILED"
 
@@ -259,22 +312,51 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
     """Return persisted LIEF metadata as soon as the static-analysis stage ingests it."""
     with new_session() as session:
         analysis = _get_analysis(session, analysis_id)
-        sections = list(session.scalars(select(Section).where(Section.analysis_id == analysis_id)))
-        imports = list(session.scalars(select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_id)))
-        exports = list(session.scalars(select(ExportSymbol).where(ExportSymbol.analysis_id == analysis_id)))
-        strings = list(session.scalars(select(StringRecord).where(StringRecord.analysis_id == analysis_id)))
-        functions = list(session.scalars(select(Function).where(Function.analysis_id == analysis_id)))
-        edges = list(session.scalars(select(CallEdge).where(CallEdge.analysis_id == analysis_id)))
+        sections = list(
+            session.scalars(select(Section).where(Section.analysis_id == analysis_id))
+        )
+        imports = list(
+            session.scalars(
+                select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_id)
+            )
+        )
+        exports = list(
+            session.scalars(
+                select(ExportSymbol).where(ExportSymbol.analysis_id == analysis_id)
+            )
+        )
+        strings = list(
+            session.scalars(
+                select(StringRecord).where(StringRecord.analysis_id == analysis_id)
+            )
+        )
+        functions = list(
+            session.scalars(select(Function).where(Function.analysis_id == analysis_id))
+        )
+        edges = list(
+            session.scalars(select(CallEdge).where(CallEdge.analysis_id == analysis_id))
+        )
         return {
             "id": str(analysis.id),
             "status": analysis.status,
             "stage": analysis.stage,
             "source": analysis.ghidra_source,
-            "source_label": "source: fixture" if analysis.ghidra_source == "fixture" else f"source: {analysis.ghidra_source}",
-            "scoring": {"score": analysis.risk_score, "rating": analysis.risk_rating,
-                        "scoring_version": analysis.scoring_version, "rule_set_version": analysis.rule_set_version,
-                        "input_hash": analysis.scoring_input_hash, "breakdown": analysis.scoring_breakdown or []},
-            "static_available": bool(sections or imports or exports or strings or analysis.arch != "unknown"),
+            "source_label": (
+                "source: fixture"
+                if analysis.ghidra_source == "fixture"
+                else f"source: {analysis.ghidra_source}"
+            ),
+            "scoring": {
+                "score": analysis.risk_score,
+                "rating": analysis.risk_rating,
+                "scoring_version": analysis.scoring_version,
+                "rule_set_version": analysis.rule_set_version,
+                "input_hash": analysis.scoring_input_hash,
+                "breakdown": analysis.scoring_breakdown or [],
+            },
+            "static_available": bool(
+                sections or imports or exports or strings or analysis.arch != "unknown"
+            ),
             "file": {
                 "sha256": analysis.sha256,
                 "md5": analysis.md5,
@@ -289,34 +371,93 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
             },
             "strings_truncated": analysis.strings_truncated,
             "possible_packing": analysis.possible_packing,
-            "packing_note": "possible packing - heuristic, not proof" if analysis.possible_packing else None,
+            "packing_note": (
+                "possible packing - heuristic, not proof"
+                if analysis.possible_packing
+                else None
+            ),
             "sections": [
-                {"name": row.name, "vaddr": row.vaddr, "vsize": row.vsize, "raw_size": row.raw_size,
-                 "perms": row.perms, "entropy": row.entropy}
-                for row in sorted(sections, key=lambda item: (_address_order(item.vaddr), item.name))
+                {
+                    "name": row.name,
+                    "vaddr": row.vaddr,
+                    "vsize": row.vsize,
+                    "raw_size": row.raw_size,
+                    "perms": row.perms,
+                    "entropy": row.entropy,
+                }
+                for row in sorted(
+                    sections, key=lambda item: (_address_order(item.vaddr), item.name)
+                )
             ],
             "imports": [
-                {"library": row.library, "name": row.name, "ordinal": row.ordinal, "address": row.address,
-                 "category": row.category}
-                for row in sorted(imports, key=lambda item: (_address_order(item.address), item.library, item.name))
+                {
+                    "library": row.library,
+                    "name": row.name,
+                    "ordinal": row.ordinal,
+                    "address": row.address,
+                    "category": row.category,
+                }
+                for row in sorted(
+                    imports,
+                    key=lambda item: (
+                        _address_order(item.address),
+                        item.library,
+                        item.name,
+                    ),
+                )
             ],
             "exports": [
                 {"name": row.name, "address": row.address, "ordinal": row.ordinal}
-                for row in sorted(exports, key=lambda item: (_address_order(item.address), item.ordinal or 0, item.name))
+                for row in sorted(
+                    exports,
+                    key=lambda item: (
+                        _address_order(item.address),
+                        item.ordinal or 0,
+                        item.name,
+                    ),
+                )
             ],
             "strings": [
-                {"offset": row.offset, "encoding": row.encoding, "value": row.value,
-                 "length": row.length, "category": row.category}
-                for row in sorted(strings, key=lambda item: (_address_order(item.offset), item.encoding, item.value))
+                {
+                    "offset": row.offset,
+                    "encoding": row.encoding,
+                    "value": row.value,
+                    "length": row.length,
+                    "category": row.category,
+                }
+                for row in sorted(
+                    strings,
+                    key=lambda item: (
+                        _address_order(item.offset),
+                        item.encoding,
+                        item.value,
+                    ),
+                )
             ],
             "functions": [
-                {"id": row.id, "address": row.address, "name": row.name, "size": row.size,
-                 "decompiler_status": row.decompiler_status, "decompiled_excerpt": row.decompiled_excerpt,
-                 "centrality": row.centrality, "artifact_available": bool(row.artifact_path)}
+                {
+                    "id": row.id,
+                    "address": row.address,
+                    "name": row.name,
+                    "size": row.size,
+                    "decompiler_status": row.decompiler_status,
+                    "decompiled_excerpt": row.decompiled_excerpt,
+                    "centrality": row.centrality,
+                    "artifact_available": bool(row.artifact_path),
+                }
                 for row in sorted(functions, key=lambda item: int(item.address, 16))
             ],
-            "edges": [{"caller": row.caller_id, "callee": row.callee_id, "type": row.edge_type}
-                      for row in sorted(edges, key=lambda item: (item.caller_id, item.callee_id, item.edge_type))],
+            "edges": [
+                {
+                    "caller": row.caller_id,
+                    "callee": row.callee_id,
+                    "type": row.edge_type,
+                }
+                for row in sorted(
+                    edges,
+                    key=lambda item: (item.caller_id, item.callee_id, item.edge_type),
+                )
+            ],
         }
 
 
@@ -324,30 +465,74 @@ def analysis_static_metadata(analysis_id: uuid.UUID):
 def analysis_overview(analysis_id: uuid.UUID):
     with new_session() as session:
         analysis = _get_analysis(session, analysis_id)
-        findings = list(session.scalars(
-            select(Finding).where(Finding.analysis_id == analysis_id)
-            .order_by(Finding.score_contribution.desc(), Finding.group_id.asc().nulls_last(), Finding.id.asc())
-        ))
+        findings = list(
+            session.scalars(
+                select(Finding)
+                .where(Finding.analysis_id == analysis_id)
+                .order_by(
+                    Finding.score_contribution.desc(),
+                    Finding.group_id.asc().nulls_last(),
+                    Finding.id.asc(),
+                )
+            )
+        )
         counts = {
-            "sections": session.scalar(select(func.count()).select_from(Section).where(Section.analysis_id == analysis_id)) or 0,
-            "imports": session.scalar(select(func.count()).select_from(ImportSymbol).where(ImportSymbol.analysis_id == analysis_id)) or 0,
-            "strings": session.scalar(select(func.count()).select_from(StringRecord).where(StringRecord.analysis_id == analysis_id)) or 0,
-            "functions": session.scalar(select(func.count()).select_from(Function).where(Function.analysis_id == analysis_id)) or 0,
+            "sections": session.scalar(
+                select(func.count())
+                .select_from(Section)
+                .where(Section.analysis_id == analysis_id)
+            )
+            or 0,
+            "imports": session.scalar(
+                select(func.count())
+                .select_from(ImportSymbol)
+                .where(ImportSymbol.analysis_id == analysis_id)
+            )
+            or 0,
+            "strings": session.scalar(
+                select(func.count())
+                .select_from(StringRecord)
+                .where(StringRecord.analysis_id == analysis_id)
+            )
+            or 0,
+            "functions": session.scalar(
+                select(func.count())
+                .select_from(Function)
+                .where(Function.analysis_id == analysis_id)
+            )
+            or 0,
             "findings": len(findings),
         }
         return {
-            "file": {"filename": analysis.original_filename, "format": analysis.format, "arch": analysis.arch,
-                     "size": analysis.file_size, "entry_point": analysis.entry_point},
+            "file": {
+                "filename": analysis.original_filename,
+                "format": analysis.format,
+                "arch": analysis.arch,
+                "size": analysis.file_size,
+                "entry_point": analysis.entry_point,
+            },
             "hashes": {"sha256": analysis.sha256, "md5": analysis.md5},
-            "risk": {"score": analysis.risk_score, "rating": analysis.risk_rating,
-                     "breakdown": analysis.scoring_breakdown or []},
+            "risk": {
+                "score": analysis.risk_score,
+                "rating": analysis.risk_rating,
+                "breakdown": analysis.scoring_breakdown or [],
+            },
             "top_findings": [_finding_card(session, item) for item in findings[:5]],
             "counts": counts,
-            "versions": {"scoring": analysis.scoring_version, "rules": analysis.rule_set_version,
-                         "schema": analysis.schema_version},
-            "states": {"status": analysis.status, "decomp_status": analysis.decomp_status,
-                        "ai_status": analysis.ai_status,
-                        "source": "fixture" if analysis.ghidra_source == "fixture" else "ghidra"},
+            "versions": {
+                "scoring": analysis.scoring_version,
+                "rules": analysis.rule_set_version,
+                "schema": analysis.schema_version,
+            },
+            "states": {
+                "status": analysis.status,
+                "decomp_status": analysis.decomp_status,
+                "ai_status": analysis.ai_status,
+                "source": (
+                    "fixture" if analysis.ghidra_source == "fixture" else "ghidra"
+                ),
+            },
+            "ai_report": analysis.ai_report,
         }
 
 
@@ -355,8 +540,16 @@ def analysis_overview(analysis_id: uuid.UUID):
 def analysis_findings(analysis_id: uuid.UUID):
     with new_session() as session:
         _get_analysis(session, analysis_id)
-        rows = list(session.scalars(select(Finding).where(Finding.analysis_id == analysis_id)))
-        rows.sort(key=lambda item: (-item.score_contribution, item.group_id or item.type, str(item.id)))
+        rows = list(
+            session.scalars(select(Finding).where(Finding.analysis_id == analysis_id))
+        )
+        rows.sort(
+            key=lambda item: (
+                -item.score_contribution,
+                item.group_id or item.type,
+                str(item.id),
+            )
+        )
         return {"items": [_finding_card(session, row) for row in rows]}
 
 
@@ -364,12 +557,24 @@ def analysis_findings(analysis_id: uuid.UUID):
 def analysis_functions(analysis_id: uuid.UUID):
     with new_session() as session:
         _get_analysis(session, analysis_id)
-        rows = list(session.scalars(select(Function).where(Function.analysis_id == analysis_id)))
-        return {"items": [{"id": row.id, "address": row.address, "name": row.name,
-                            "centrality": row.centrality, "decompiler_status": row.decompiler_status,
-                            "decompiled_excerpt": row.decompiled_excerpt,
-                            "artifact_available": bool(row.artifact_path)}
-                           for row in sorted(rows, key=lambda item: int(item.address, 16))], "next_cursor": None}
+        rows = list(
+            session.scalars(select(Function).where(Function.analysis_id == analysis_id))
+        )
+        return {
+            "items": [
+                {
+                    "id": row.id,
+                    "address": row.address,
+                    "name": row.name,
+                    "centrality": row.centrality,
+                    "decompiler_status": row.decompiler_status,
+                    "decompiled_excerpt": row.decompiled_excerpt,
+                    "artifact_available": bool(row.artifact_path),
+                }
+                for row in sorted(rows, key=lambda item: int(item.address, 16))
+            ],
+            "next_cursor": None,
+        }
 
 
 @router.get("/{analysis_id}/functions/{fid}")
@@ -379,18 +584,36 @@ def analysis_function_detail(analysis_id: uuid.UUID, fid: str, load_full: bool =
         row = session.get(Function, fid)
         if row is None or row.analysis_id != analysis_id:
             raise _problem(404, "FUNCTION_NOT_FOUND", "Function not found.")
-        result = {"id": row.id, "address": row.address, "name": row.name,
-                  "centrality": row.centrality, "decompiler_status": row.decompiler_status,
-                  "decompiled_excerpt": row.decompiled_excerpt, "artifact_available": bool(row.artifact_path)}
+        result = {
+            "id": row.id,
+            "address": row.address,
+            "name": row.name,
+            "centrality": row.centrality,
+            "decompiler_status": row.decompiler_status,
+            "decompiled_excerpt": row.decompiled_excerpt,
+            "artifact_available": bool(row.artifact_path),
+        }
+        if row.ai_summary_json is not None:
+            result["ai_summary"] = row.ai_summary_json
         if load_full and row.artifact_path:
             try:
-                path = function_artifact_path(os.getenv("DATA_ROOT", "/data"), str(analysis_id), fid)
+                path = function_artifact_path(
+                    os.getenv("DATA_ROOT", "/data"), str(analysis_id), fid
+                )
                 with path.open("rb") as stream:
                     content = stream.read(500_001)
             except (UnsafeStoragePath, OSError):
-                raise _problem(404, "FUNCTION_ARTIFACT_NOT_FOUND", "Full decompilation artifact not found.")
-            result["decompiled_full"] = content[:500_000].decode("utf-8", errors="replace")
-            result["artifact_truncated"] = row.artifact_size is not None and row.artifact_size > 500_000
+                raise _problem(
+                    404,
+                    "FUNCTION_ARTIFACT_NOT_FOUND",
+                    "Full decompilation artifact not found.",
+                )
+            result["decompiled_full"] = content[:500_000].decode(
+                "utf-8", errors="replace"
+            )
+            result["artifact_truncated"] = (
+                row.artifact_size is not None and row.artifact_size > 500_000
+            )
         return result
 
 
@@ -426,13 +649,17 @@ def delete_analysis(analysis_id: uuid.UUID):
         analysis = _get_analysis(session, analysis_id)
         if analysis.status not in TERMINAL_STATES:
             try:
-                celery_app.control.revoke(str(analysis_id), terminate=True, signal="SIGTERM")
+                celery_app.control.revoke(
+                    str(analysis_id), terminate=True, signal="SIGTERM"
+                )
             except Exception:
                 pass
             transition_analysis(analysis, "CANCELLED")
             session.commit()
             try:
-                store_terminal_tombstone(str(analysis_id), "cancelled", {"id": str(analysis_id)})
+                store_terminal_tombstone(
+                    str(analysis_id), "cancelled", {"id": str(analysis_id)}
+                )
             except Exception:
                 pass
         try:

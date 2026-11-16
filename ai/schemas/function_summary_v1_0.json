@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/ai/function-summary-v1.0.json",
+  "title": "AI function summary v1.0",
+  "type": "object",
+  "required": ["schema_version", "function_id", "purpose", "behavior", "evidence_ids", "uncertainty"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "function_id": {"type": "string", "pattern": "^[0-9a-fA-F-]{36}:0x[0-9a-f]+$"},
+    "purpose": {"type": "string", "maxLength": 1000},
+    "behavior": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+    "evidence_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+    "suspicious_indicators": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+    "uncertainty": {"type": "string", "maxLength": 1000},
+    "alternative_explanation": {"type": "string", "maxLength": 1000},
+    "suggested_technique_id": {"type": "string"},
+    "rationale": {"type": "string", "maxLength": 1000}
+  },
+  "additionalProperties": false
+}
