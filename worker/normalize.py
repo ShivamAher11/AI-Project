@@ -59,10 +59,17 @@ def normalize_analysis(static: dict, analysis_id: str, *, created_at: datetime |
     exports = sorted(static["exports"], key=lambda row: (_addr_sort(row, "address"), row["ordinal"] or 0,
                                                           row["name"]))
     strings = sorted(static["strings"], key=lambda row: (_addr_sort(row, "offset"), row["encoding"], row["value"]))
-    ghidra_result = ghidra_result or {"source": "none", "functions": [], "edges": []}
+    ghidra_result = ghidra_result or {
+        "source": "none", "decomp_status": "NOT_RUN", "functions": [], "edges": [],
+    }
     source = ghidra_result.get("source", "none")
     if source not in {"fixture", "real", "none"}:
         raise NormalizationError("Invalid decompilation source.")
+    decomp_status = ghidra_result.get("decomp_status")
+    if decomp_status is None:
+        decomp_status = "OK" if source in {"fixture", "real"} and ghidra_result.get("functions") else "NOT_RUN"
+    if decomp_status not in {"OK", "FAILED", "TIMEOUT", "NOT_RUN"}:
+        raise NormalizationError("Invalid decompilation status.")
     id_prefix = str(UUID(analysis_id))
     address_to_id: dict[str, str] = {}
     prepared_functions = []
@@ -122,7 +129,7 @@ def normalize_analysis(static: dict, analysis_id: str, *, created_at: datetime |
         "sha256": static["sha256"],
         "md5": static["md5"],
         "status": "PARTIAL",
-        "decomp_status": "OK" if source == "fixture" and ghidra_result.get("functions") else "NOT_RUN",
+        "decomp_status": decomp_status,
         "source": source,
         "strings_truncated": bool(static["strings_truncated"]),
         "possible_packing": bool(static["possible_packing"]),
@@ -137,7 +144,12 @@ def normalize_analysis(static: dict, analysis_id: str, *, created_at: datetime |
             "entry_point": static["entry_point"],
             "extension_mismatch": static["extension_mismatch"],
         },
-        "toolchain": {"ghidra": "NOT_RUN", "jdk": "NOT_RUN", "lief": "1.0.0", "capstone": "NOT_RUN"},
+        "toolchain": {
+            "ghidra": str(ghidra_result.get("toolchain", {}).get("ghidra", "NOT_RUN")),
+            "jdk": str(ghidra_result.get("toolchain", {}).get("jdk", "NOT_RUN")),
+            "lief": "1.0.0",
+            "capstone": "NOT_RUN",
+        },
         "versions": {"scoring": "1.0", "rules": "1.0", "prompts": "1.0"},
         "sections": sections,
         "imports": imports,
