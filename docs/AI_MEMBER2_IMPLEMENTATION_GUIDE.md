@@ -1,5 +1,19 @@
 # Member 2 AI Implementation Guide
 
+## Approved Product Direction (2026-11-17)
+
+Follow `docs/SPEC.md` §“Approved Amendment 1.5 — AI-Centered Static Analysis”. This amendment supersedes conflicting text below and in older project docs.
+
+Member 2 delivers an automatic, evidence-grounded AI pipeline. The LLM may request bounded work from typed, allow-listed static tools. The isolated worker runs tools such as Ghidra; the API mediates model access. Never provide shell, arbitrary code execution, filesystem access, or network tools. Never execute uploaded content.
+
+Accept arbitrary regular files within configured size limits. Use a format parser when available. Otherwise provide bounded generic observations from safe metadata, type detection, hashes, entropy, and printable strings. State limitations. Never send raw bytes or paths to the model.
+
+The final AI assessment must be `LIKELY_MALICIOUS`, `LIKELY_BENIGN`, or `INCONCLUSIVE`, cite valid evidence IDs from the current analysis, and state uncertainty. Use `INCONCLUSIVE` when evidence is missing, weak, or conflicting. Keep AI assessment separate from deterministic findings, scores, severity, confidence, and ATT&CK ceilings.
+
+Run function analysis, evidence correlation, and report synthesis automatically when a provider is configured. Keep remote-provider disclosure and deployment-level consent. AI or tool failure must preserve static results and report `PARTIAL`/`DEGRADED` honestly. Bump affected prompt/schema versions and invalidate stale cache entries.
+
+Use `docs/AI_CODING_AGENT_PROMPTS.md` for the phase-by-phase implementation sessions. The implementation agent must update code and tests after reading this guide. The work does not stop at documentation.
+
 ## Purpose
 
 This guide gives an AI coding agent the work order for Member 2's AI pipeline.
@@ -7,9 +21,9 @@ Follow this guide with `AGENTS.md` and `docs/SPEC.md`.
 `docs/SPEC.md` controls product behavior and data contracts.
 This guide narrows work to AI interpretation and its integration points.
 
-Member 2 builds AI explanations from deterministic analysis results.
+Member 2 builds an automatic AI analysis pipeline from deterministic analysis results and bounded static-tool outputs.
 The rules engine decides findings, scores, severity, confidence, and ATT&CK ceilings.
-The model explains supplied evidence. It does not decide risk.
+The model correlates supplied evidence and produces a separate evidence-based file assessment.
 
 ## Read Before Editing
 
@@ -49,16 +63,17 @@ Do not rewrite extraction, detection, scoring, graph, or general UI systems.
 - Put evidence inside explicit data delimiters. Never let evidence act as instructions.
 - Validate every model response in application code, even when the endpoint accepts JSON Schema.
 - Check every returned evidence ID and function ID against the current analysis.
-- Reject unknown fields. Reject `score`, `risk_score`, `severity`, `confidence`, and `confidence_score`.
+- Reject unknown fields. Reject AI-authored `score`, `risk_score`, `severity`, `confidence`, and `confidence_score` fields.
 - Do not let AI edit rules, findings, score, severity, confidence, or score breakdown.
-- Do not assert malware, family, or verdict. Use qualified language and state uncertainty.
+- Allow only the approved evidence-based assessment labels. Require valid evidence IDs and uncertainty. Use `INCONCLUSIVE` when evidence is insufficient or conflicting.
 - A zero-finding analysis is not proof of benign behavior.
 - Keep worker network access isolated. The worker calls the internal API, not PolyStrata.
 - Keep external provider calls in the API process.
 - Keep secrets out of Git, logs, responses, Docker images, prompts, and fixtures.
 - Label fixture-derived results as `source: fixture` in API and UI.
 - Report `COMPLETED`, `PARTIAL`, or `FAILED` honestly.
-- Keep AI optional. Static analysis and rule findings remain usable when AI is off.
+- Run AI automatically when a provider is configured. Static analysis and rule findings remain usable when AI or a tool fails.
+- Permit only typed, allow-listed static-analysis tool requests. Never provide shell, arbitrary code execution, filesystem, or network tools.
 
 ## Existing Integration Points
 
@@ -72,19 +87,19 @@ Inspect these before extending them. Reuse existing routes and components.
 | Pipeline handoff | `POST /api/v1/ai/internal/analyses/{analysis_id}/pipeline` | Accept only an authenticated worker request. |
 | Function detail | `GET /api/v1/analyses/{id}/functions/{fid}` | Return a stored validated function summary when present. |
 | Overview | `GET /api/v1/analyses/{id}/overview` | Return AI state and stored report without changing risk fields. |
-| Report | Existing Markdown report route | Include AI text only as a labeled interpretation. |
+| Report | Existing Markdown report route | Include the validated AI assessment as a labeled, evidence-linked result. |
 
 Use these existing UI routes:
 
 - `/analyses/:id/overview`: AI explanation panel and AI availability state.
 - `/analyses/:id/functions/:fid`: function summary with evidence references.
-- `/analyses/:id/report`: optional AI synthesis beside deterministic report content.
+- `/analyses/:id/report`: automatic AI assessment and synthesis beside deterministic report content.
 
 Do not add an AI settings page or a new top-level route.
 Keep model and tunnel configuration in environment settings.
-Keep the existing `Explain findings` action for on-demand analysis explanations.
+Keep `Explain findings` only as an optional follow-up action. The normal pipeline must generate its assessment automatically.
 
-The Overview panel must show `AI interpretation — verify`.
+The Overview panel must show the AI assessment, evidence links, uncertainty, and `AI-generated assessment — verify`.
 It must show whether a result is pipeline-generated or on-demand.
 It must show model name, generation time, and input hash when available.
 It must show an error or disabled message without hiding deterministic findings.
@@ -99,7 +114,7 @@ Warn that decompilation can contain secrets before the user enables remote calls
 
 The Report view must preserve all deterministic sections and limitations.
 It must identify AI-generated text and its availability state.
-It must not add unsupported claims or imply a verdict.
+It must not add unsupported claims. It must label the evidence-based assessment and keep it separate from deterministic risk.
 
 ## Persistence Contract
 
@@ -209,7 +224,7 @@ Function prompt output:
 - Required uncertainty and a plausible benign explanation.
 - Optional ATT&CK suggestion only when the rule pipeline supplied a candidate.
 
-Do not ask Stage 1 to produce scores, severity, confidence, verdict, or new findings.
+Do not ask Stage 1 to produce scores, severity, confidence, final verdict, or new findings. The final report stage produces the separate evidence-based assessment under Amendment 1.5.
 
 ### Provider
 
@@ -340,7 +355,7 @@ On Overview, keep the existing explanation action and AI panel.
 Disable the action until analysis is `COMPLETED` or `PARTIAL`.
 Show loading text while the API waits.
 Show a safe error message when the provider fails.
-Show the rule-only view when AI is disabled.
+Show deterministic results and the AI-unavailable state when the provider is disabled or unreachable. Mark the analysis partial.
 Show AI report text only after API validation.
 
 On Function Detail, add the structured Stage 1 summary.
@@ -414,7 +429,7 @@ CONSENT_CLOUD_LLM=true
 
 Use separate HTTP Basic Auth credentials for ngrok and Bearer credentials for PolyStrata.
 Do not reuse one secret for both layers.
-Keep `CONSENT_CLOUD_LLM` as the current explicit opt-in setting.
+Require `CONSENT_CLOUD_LLM=true` before sending extracted data to a remote provider. A configured local provider must run without cloud consent. Never silently fall back from local to remote.
 Explain that model inference is local but request traffic crosses the ngrok service.
 Do not silently fall back to a cloud model.
 Do not add the ngrok token to the application request headers.
@@ -434,11 +449,11 @@ Check one fixture-backed AI explanation with explicit user consent.
 Confirm logs do not contain prompts, extracted code, or credentials.
 Turn off the tunnel after the check when it is not needed.
 
-## Phase 5 — Optional Stage 2 and Stage 3
+## Phase 5 — AI Evidence Correlation and Report Synthesis
 
-Implement these stages only after Phase 3 acceptance checks pass.
-Add one stage at a time. Keep each stage behind a setting or pipeline option.
-Record the authorized project-scope deviation in `CHANGELOG.md`.
+Stage 2 and Stage 3 are required parts of the approved AI-centered pipeline. Use the existing strict schemas and bounded context requirements as a baseline. Extend them for tool requests and the final evidence-based assessment. Keep prompt and output versions explicit. See SPEC Amendment 1.5 for the controlling behavior.
+
+Implement these stages as required parts of the automatic AI pipeline. Add one stage at a time. Record any further scope deviation in `CHANGELOG.md`.
 
 ### Stage 2: behavior correlation
 
@@ -490,15 +505,15 @@ Report commands and results accurately. Do not claim tests passed without runnin
 
 ## Completion Criteria
 
-Member 2's minimum deliverable is one working, evidence-grounded Stage 1 capability.
-It must summarize selected functions and show valid evidence references.
-It must work with fixtures and a mock provider without a live model.
-The local PolyStrata/ngrok setup must be documented and testable by opt-in smoke check.
+Member 2's deliverable is the automatic multi-stage, evidence-grounded AI pipeline.
+It must analyze selected functions, correlate evidence, request bounded static tools when useful, and produce the approved assessment labels.
+It must work with fixtures and mocked providers/tools without a live model.
+The local provider setup must be documented. Live smoke checks remain opt-in and must not run in CI.
 AI failures must leave deterministic analysis available and correctly marked.
 No raw binary may reach the model.
 No AI output may alter deterministic risk or findings.
 All added database and API fields must be versioned and documented.
-Stage 2 and Stage 3 remain optional until Stage 1 meets every exit check.
+Stage 1, Stage 2, and Stage 3 are required for the configured-provider AI assessment. Provider failure preserves deterministic output and marks the analysis partial/degraded.
 
 At the end of each implementation part, report:
 

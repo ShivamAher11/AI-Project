@@ -2,9 +2,9 @@
 
 ## 0. Document Control
 
-* document version: `1.4`
-* status: `LOCKED FOR BUILD`
-* last updated: `2026-09-03`
+* document version: `1.5`
+* status: `APPROVED FOR IMPLEMENTATION`
+* last updated: `2026-11-17`
 * supersedes: `AI_Reverse_Engineering_Assistant_Agent_Context_Brief.md` + SET1/2/3 locked answers + FINAL LOCKED REQUIREMENTS SYNTHESIS
 * legend:
   * `LOCKED` = do not change without re-grill / architecture review
@@ -15,31 +15,50 @@
   2. FastAPI OpenAPI is authoritative for REST shapes at code level; if OpenAPI drifts from this file, fix code to match this file unless file amended.
   3. `analysis-schema-version: 1.0` + `scoring_version: 1.0` + `rule_set_version: 1.0` + `prompt_version: 1.0` + `output_schema_version: 1.0` are pinned. Any bump requires re-baseline per §36.
 
+## Approved Amendment 1.5 — AI-Centered Static Analysis
+
+This amendment was approved on 2026-11-17. It supersedes every conflicting statement in this document and in older project docs. The coding agent must implement this amendment. Do not treat earlier AI-optional, no-verdict, input-format rejection, or Stage 2/3 deferral text as current policy.
+
+- Accept any regular file within the configured upload limit. Never use its name as a path. Never execute uploaded content or derived content.
+- Use format-specific static parsers when available. For other formats, return bounded generic observations from safe metadata, magic/type detection, hashes, entropy, and printable strings. State parser coverage and limitations. Do not claim equivalent depth for every format.
+- AI is a normal automatic analysis stage. A configured provider is called without a per-analysis opt-in. Preserve explicit disclosure and deployment-level consent before sending extracted data to a remote provider. Never silently change to a remote provider.
+- The LLM may request only typed, allow-listed static-analysis tools. The API mediates model calls. The isolated worker runs approved analyzers such as Ghidra and returns bounded results. The model has no shell, network, filesystem, or arbitrary code execution tool. Uploaded files remain inert.
+- Run function analysis, evidence correlation, and report synthesis as one bounded AI pipeline. Tool calls, context size, output size, retries, and wall time have fixed limits. Tool output and extracted text remain untrusted data.
+- The AI produces one evidence-based assessment: `LIKELY_MALICIOUS`, `LIKELY_BENIGN`, or `INCONCLUSIVE`. The assessment cites evidence IDs from the current analysis and states uncertainty. Use `INCONCLUSIVE` when evidence is absent, insufficient, or conflicting. Do not claim certainty or a family attribution without validated evidence.
+- The final assessment contract is strict JSON: `schema_version`, `verdict`, `summary`, `evidence_ids`, `rationale`, `uncertainty`, and `limitations`. Reject unknown fields, invalid IDs, unsupported claims, and score/severity/confidence fields. `evidence_ids` must be non-empty for either likely verdict; otherwise require `INCONCLUSIVE`.
+- Tool calls use typed names and JSON arguments from a server-side allowlist. Validate each call before execution. Limit an analysis to the existing 52-call and 60,000-output-token ceilings, including tool cycles, repairs, and synthesis. Stop at the budget and return `PARTIAL` with completed findings.
+- Keep AI assessment separate from deterministic findings, score, severity, confidence, and ATT&CK candidate ceilings. The LLM may explain or synthesize supplied findings; it may not alter them or invent evidence.
+- AI failure preserves deterministic output and yields an honest `PARTIAL` or `DEGRADED` state. A configured provider is required for a completed AI assessment. AI is attempted automatically; users do not need to invoke an explanation action to start it.
+- Bump affected prompt/output contract versions when implementing this amendment. Do not reuse cached results across contract versions.
+- Keep credential values out of committed docs and `.env.example`. Keep `.env` local and ignored. Document only settings that current code or Compose consumes.
+
+Implementation scope and acceptance tests must cover arbitrary-file upload, generic fallback, tool authorization and limits, evidence-grounded verdicts, provider failure, prompt injection, privacy disclosure, and unchanged deterministic risk outputs.
+
 ## 1. Product Definition
 
-* product: AI-powered static RE assistant. Turns PE/ELF into metadata, functions, call graph, deterministic findings, evidence-backed AI explanations, risk breakdown, Markdown report.
-* positioning LOCKED: **Evidence-first AI copilot for static reverse engineering.** Not autonomous malware detector. Not family classifier. Not sandbox.
+* product: AI-centered static analysis assistant. Accepts regular files, gathers format-specific or generic static evidence, uses bounded analysis tools, and produces deterministic findings plus an evidence-based AI assessment and report.
+* positioning LOCKED: **Evidence-first AI analysis for static reverse engineering.** The AI produces a qualified assessment, not an infallible verdict or family attribution. The system is not a dynamic sandbox.
 * persona LOCKED: 1) security student / junior analyst primary, 2) researcher triage secondary, 3) SWE investigating unknown binary tertiary. Explanations default layer; dense evidence always one click away.
 * core value: reduce time to understand large binary without reading all assembly. Every important claim traceable `dashboard -> finding -> technique -> functions -> evidence`.
-* MVP promise: upload PE x64 `.exe` → immediate static metadata → async Ghidra → normalized funcs/graph → deterministic findings → bounded AI summaries → deterministic score + ATT&CK qualified → dashboard + Markdown. Works without AI. Partial states honest, never fake `100% analyzed`.
+* MVP promise: upload a regular file → static metadata and format detection → available parsers and bounded static tools → deterministic findings → automatic AI function analysis, correlation, assessment, and report → dashboard + Markdown. Deterministic results remain available when AI fails. Partial states stay honest.
 * explicit non-goals LOCKED: execute uploads; dynamic sandbox; kernel tracing; family attribution; patching; IDA parity; full ATT&CK; offensive AI; LLM as ground truth; cloud binary submit without explicit consent; forensic-grade verdicts; live malware in repo/CI; Qdrant/embeddings/chat/auth/PDF/multi-user in MVP.
 
-Anti-oracle rule: UI never says `This is malware / This is Emotet / 98.7% malicious`. Allowed: `Behaviorally suspicious`, `Possible persistence T1547.001`, `Static Risk 48/100 Medium — heuristic, not verdict`.
+Assessment wording: use `Likely malicious`, `Likely benign`, or `Inconclusive`, with evidence and uncertainty. Never claim certainty or unsupported family attribution. Keep the AI assessment separate from `Static Risk 48/100 Medium — heuristic` and deterministic findings.
 
 ## 2. MVP Scope
 
 Must LOCKED:
-* ingest PE `.exe/.dll` x64 (first slice), x86-32 next, ELF x64/x86 second sprint. ARM queued degraded.
+* accept any regular file within upload limits. Provide full format-specific analysis only where a parser exists; otherwise provide bounded generic static observations and disclose limited coverage.
 * SHA256+MD5, size/format/arch/bitness/endianness/entry.
 * sections+perms+entropy, imports/exports where avail, strings+offsets, PE cert metadata where avail.
 * LIEF + Ghidra headless + normalize v1.0 + 20-indicator rules + 6 correlation groups + deterministic score + 15 ATT&CK qualified + AI 3-stage bounded + 7 routes + focused graph + Markdown report + delete/TTL + SSE progress.
-* failure-aware UX: `COMPLETED / PARTIAL / FAILED`, `decomp TIMEOUT`, `AI DISABLED/DEGRADED`, `0 findings ≠ benign`.
+* failure-aware UX: `COMPLETED / PARTIAL / FAILED`, tool timeout/failure, `AI DEGRADED`, and `0 findings ≠ benign`.
 
 Should: ATT&CK curated 15 (ships in MVP but rule-only fallback acceptable), persistence by job ID, server search/filter.
 
 Cut/Deferred LOCKED: family estimation, dynamic execution, YARA auto-deploy (suggestion v2), embeddings/Qdrant/semantic search, chat, multi-user/auth, PDF, cloud hosted as gold (local Compose gold).
 
-Acceptance: one PE x64 completes end-to-end; static usable without LLM; every high-severity finding has ≥1 evidence ref; AI output separates observed/inference/uncertainty; risk reproducible same evidence+versions; 9-binary eval meets §36 thresholds; demo script §45 runs from precomputed cache + live static path.
+Acceptance: a parser-supported file and an unknown regular file complete their appropriate paths; deterministic output remains available on AI failure; every likely verdict has at least one valid evidence reference and uncertainty; AI never changes deterministic risk.
 
 ## 3. User Journey
 
@@ -56,9 +75,9 @@ Acceptance: one PE x64 completes end-to-end; static usable without LLM; every hi
  → DELETE removes source+derived, TTL 24h auto
 ```
 
-If Ghidra timeout: banner `Partial — decomp TIMEOUT, static available`. If AI missing: `AI unavailable — rule findings available`. If 0 findings: `No indicators by current rule set. Does not prove benign.`
+If a static tool times out: banner `Partial — tool TIMEOUT, completed static results available`. If AI is unavailable: `AI unavailable — deterministic static results available` and mark analysis `PARTIAL`. If 0 findings: `No indicators by current rule set. Does not prove benign.`
 
-## 4. Supported Binary Matrix
+## 4. File Format Coverage
 
 | Format | Extension | Arch | Support Level | Behavior |
 |---|---|---|---|---|
@@ -68,8 +87,7 @@ If Ghidra timeout: banner `Partial — decomp TIMEOUT, static available`. If AI 
 | ELF | no ext / `.elf/.so` | x64 | SUPPORTED SPRINT2 | LIEF ELF + Ghidra, registry/service rules N/A, ELF-specific notes |
 | ELF | | x86-32 | SUPPORTED SPRINT2 | as above |
 | PE/ELF | any | ARM64/ARM32 | DEGRADED | queue attempt, mark `unsupported_architecture`, no quality guarantee |
-| Mach-O | any | any | REJECT | `400 UNSUPPORTED_FORMAT` |
-| text/script/pdf/zip | any | — | REJECT | `400` magic mismatch, archives not unpacked in MVP |
+| Other regular file | any | — | GENERIC | bounded metadata, detected type, hash, entropy, printable strings, and explicit parser-coverage limits |
 
 Extension mismatch: advisory warning only, magic authoritative. `.dll` that is ELF magic → treat as ELF + warn.
 
@@ -154,26 +172,18 @@ Responsibilities per §41. Frontend builds only against `fixtures/` until M1 don
 
 ## 9. Environment Configuration
 
-`.env.example` contract (all caps, `AI_ENABLED` derived):
+`.env.example` contract. Include only settings consumed by code or Compose. AI runs automatically when configured. Require cloud consent only for remote providers; never silently switch from local to remote.
 
 ```text
-LLM_API_KEY= required-if-AI optional-empty | secret | purpose cloud auth
-LLM_MODEL=gpt-4o-mini | optional default gpt-4o-mini | VERIFY id | purpose pin
-LLM_BASE_URL=https://api.openai.com/v1 | optional default | configured provider endpoint; API only; worker never uses it
-CONSENT_CLOUD_LLM=false | optional bool default false | if false → block external LLM even if key present
-AI_ENABLED=derived: true iff CONSENT true + key present + model set else false | do not set manually
-GHIDRA_CONCURRENCY=1 | optional int default1 min1 max2 | 1 default; value 2 means scale to two 8GB worker containers on host ≥32GB
-MAX_FILE_MB=100 | optional int default100 min1 max100 | ingress+app+stream enforce
-ANALYSIS_TIMEOUT_S=900 | optional default900 (15min) range 300-1800
-WORKER_MEM_LIMIT=8g | compose limit, request 4g
-ARTIFACT_MAX_BYTES=2147483648 | 2GB per analysis
-TTL_HOURS=24 | default24 range1-168 | cleanup worker
-QUEUE_MAX=10 | default10 | full →429
-FUNC_AI_K=50 | default50 fallback20 | §26 deterministic reduction
-STAGE2_MAX_CHARS=80000 | STAGE3_MAX_CHARS=40000 | FUNC_MAX_CHARS=12000
-LLM_TIMEOUT_S=30 | LLM_MAX_RETRIES=2 | LLM_RPM=60 | LLM_TPM_LIMIT=30000 | UPLOAD_TMP_QUOTA_MB=512
-DATABASE_URL=postgres://... required | REDIS_URL=redis://... required
-DATA_ROOT=/data required | no secrets in logs
+LLM_API_KEY=provider secret | LLM_MODEL=provider model | LLM_BASE_URL=provider URL
+LLM_ALLOWED_HOSTS=exact host allowlist | CONSENT_CLOUD_LLM=false for remote providers
+LLM_TIMEOUT_S=30 | LLM_MAX_RETRIES=2 | LLM_RPM=60 | LLM_TPM_LIMIT=30000
+FUNC_AI_K=50 | FUNC_MAX_CHARS=12000 | MAX_FILE_MB=100 | TTL_HOURS=24
+DATABASE_URL=PostgreSQL URL | REDIS_URL=Redis URL | DATA_ROOT=/data
+FRONTEND_ORIGIN=http://localhost:3000 | GHIDRA_MODE=real | GHIDRA_TIMEOUT_SECONDS=900
+PIPELINE_AI_INTERNAL_TOKEN=random shared API/worker secret
+PIPELINE_AI_API_URL=internal API base | PIPELINE_AI_REQUEST_TIMEOUT_S=150
+POSTGRES_DB=analysis | POSTGRES_USER=app | POSTGRES_PASSWORD=local secret
 ```
 
 Secrets sensitivity: `LLM_API_KEY,DATABASE_URL,REDIS_URL` secret. Never bake into images.
@@ -209,7 +219,7 @@ CREATED → VALIDATING → STATIC_ANALYSIS → RE_ANALYSIS → NORMALIZING → D
    |           └→FAILED       └→FAILED        └→PARTIAL*     └→FAILED     └→FAILED  └→PARTIAL†   └→PARTIAL†
    └→CANCELLED (DELETE while queued/running → revoke → CANCELLED terminal, cleanup; if Ghidra is running, revoke also performs `SIGTERM→5s→SIGKILL` on the subprocess tree before cleanup)
 * LIEF ok + Ghidra fail/timeout → PARTIAL static-only, findings=STATIC_ONLY, ai NOT_RUN
-† AI fail/budget/timeout → PARTIAL rule-only, report rule-only + banner
+† AI fail/budget/timeout → PARTIAL, preserve deterministic results and any completed AI stages + banner
 Single-func decomp fail → stay in RE, mark func decompiled_code null + status FAILED, continue
 ```
 
@@ -226,9 +236,9 @@ Order deterministic, first fail wins. Server authoritative; client checks adviso
 |---|---|---|---|
 |1| size streaming counter `>MAX_FILE_MB` | Content-Length + byte count | `413 PAYLOAD_TOO_LARGE` `File too large. Max 100 MB.` |
 |2| empty `0 bytes` | byte count | `400 EMPTY_FILE` |
-|3| magic bytes `MZ` (`4D5A`) or ELF (`7F454C46`) at offset0 | header sniff, not ext/MIME | `400 UNSUPPORTED_FORMAT Unsupported or invalid binary. Upload valid PE or ELF.` |
-|4| LIEF parse | worker STATIC | fail → `400 INVALID_BINARY` terminal FAILED, no Ghidra |
-|5| arch support | LIEF machine | x64/x86 proceed; ARM → proceed + flag `unsupported_architecture` degraded; unknown → degraded |
+|3| magic/type detection | bounded header sniff, not ext/MIME | record detected type and parser coverage; do not reject by file type |
+|4| format parser | worker STATIC | parser unavailable/fails → generic static fallback; mark limitation and PARTIAL when required evidence is missing |
+|5| architecture support | format parser when available | supported architecture proceeds; unsupported or unknown architecture uses generic fallback and states limitation |
 |6| ext/MIME vs magic | compare | warn only `extension_mismatch:true`, never reject |
 |7| duplicate SHA256 | lookup | NOT dedup: create new `analysis_id` (provenance differs), optionally link `prior_analysis_ids` in response |
 |8| truncated (magic ok, sections beyond EOF) | LIEF exception | `400` if STATIC cannot produce minimal metadata else PARTIAL with `static_degraded:true` |
@@ -237,7 +247,7 @@ Order deterministic, first fail wins. Server authoritative; client checks adviso
 
 ## 13. Static Analysis Pipeline
 
-Order LOCKED: hash → LIEF → strings/entropy → Ghidra → normalize → rules.
+Order: hash/type detection → available format parsers → generic metadata/strings/entropy → normalize → deterministic rules → automatic AI function analysis, bounded tool requests, evidence correlation, assessment, and report synthesis.
 * LIEF owns: sha256/md5/size, format/arch/bitness/endian/entry, headers, sections (name/vaddr/vsize/raw/perms/entropy), imports/exports (lib/name/ordinal/addr/category), PE cert metadata, ELF segments/notes where cheap. VERIFY exact LIEF API at start.
 * Ghidra owns: functions (addr/name/size/signature), assembly excerpts, decomp pseudocode, xrefs, call edges, symbols. Never imports/sections truth (LIEF wins; optional cross-check logged only).
 * strings: printable ASCII ≥4 + UTF-16LE ≥4 with offset/encoding/len/category (path/url/registry/cmd/other). Cap 500 chars to LLM, full in DB (limit 100k rows/analysis, truncate + flag).
@@ -463,13 +473,14 @@ Contradiction fixed: LLM never outputs `confidence` or numeric score.
 * K deterministic: default 50, if `est_input_chars >120k` or `LOW_BUDGET=true` or prior 429 → auto K=20 (log `k_reduced:true`). Remove AI only after K=20 still over budget → DEGRADED.
 * caps: func 12k chars in / 1500 tokens out; Stage2 80k total; Stage3 40k total. The provider may support up to 16k output tokens, but this application hard-caps each function call at 1500 output tokens. **60k output tokens is the aggregate per-analysis ceiling across all AI calls, not a per-request limit.** Use a tokenizer (e.g. `tiktoken`) before every request; enforce a configurable per-minute token guard (`LLM_TPM_LIMIT`, default 30000) in addition to `LLM_RPM`. If the next call would exceed the minute budget, defer it or reduce K before sending. Character caps are safety ceilings; tokenizer counts are authoritative for provider-budget checks. Truncate priority: drop assembly first, then decomp tail; never drop evidence IDs/import names required for grounding. Hard reject if still over → reduce K.
 * cache `SHA256(model+prompt_version+norm_input_hash)` skip repeat. Token usage logged per `ai_run`.
-* degraded: any stage fail/timeout/budget → `ai_status DEGRADED`, static+rules+rule-only report remain. No retry because answer “looks bad”.
+* tool/model loop: use typed allow-listed static operations only; validate arguments, IDs, output size, and budget before every call. Evidence text cannot invoke tools.
+* degraded: any AI/tool stage fail, timeout, invalid response, or exhausted budget → `ai_status DEGRADED`, preserve static/rule results and completed AI output, mark overall `PARTIAL`. Never retry because a person dislikes a valid answer.
 
 ## 27. AI Prompt Contracts
 
 * func summarizer: in {func meta, 12k decomp+asm, local imports/strings, evidence delimiters} → out func schema §28. Purpose 1-2 sentences, behaviors list, indicators from evidence only, uncertainty required, alt benign required.
 * behavior correlator: in {50 summaries, rule hits, relevant imports/strings, edges depth≤2} → out behavior findings + suggested ATT&CK + rationale. No raw decomp dump. Must cite `evidence_ids` + `affected_function_ids`.
-* report synthesizer: in {metadata, deterministic findings, summaries, ATT&CK qualified} → out {exec_summary, key_behaviors[], limitations[], ai_availability} concise, preserves uncertainty, no new technique invention. All prompts versioned `prompt_version 1.0`, evidence wrapped, system instruction authoritative.
+* report synthesizer: in {metadata, deterministic findings, summaries, ATT&CK qualified, bounded tool results} → strict output {verdict, summary, evidence_ids, rationale, uncertainty, limitations}. It cannot invent evidence or change deterministic results. Prompt and schema versions are explicit.
 
 ## 28. AI JSON Schemas
 
@@ -523,7 +534,8 @@ Markdown structure LOCKED:
 
 ```md
 # Static Analysis Report <filename> <sha256 short>
-> AI-assisted triage, not malware verdict. AI DISABLED/DEGRADED if so.
+> Evidence-based AI assessment. It is not certainty. AI DEGRADED if any required stage failed.
+## AI Assessment (LIKELY_MALICIOUS / LIKELY_BENIGN / INCONCLUSIVE)
 ## Executive summary (3-5 lines, uncertainty kept)
 ## File identity (hashes,size,format,arch,entry,versions)
 ## Static Risk Score 48/100 Medium + breakdown table + formula note
@@ -573,7 +585,7 @@ E2E: 9 corpus through full pipeline, golden compare, demo script rehearsal.
 | normalize schema fail | validator | FAILED INTERNAL (safe msg) | bugfix + re-upload | sweep |
 | Redis/DB down | health | 503 + retry | yes retry job | job stays QUEUED |
 | queue full 10 | counter | 429 + Retry-After | yes later | — |
-| LLM timeout/429/5xx | adapter | PARTIAL rule-only `AI unavailable` | yes re-run AI? MVP no, new analysis | keep rules |
+| LLM timeout/429/5xx | adapter | PARTIAL `AI unavailable` | new analysis after configuration/recovery | keep deterministic output |
 | budget exceeded | counter | DEGRADED + K reduced log | yes K20 fallback | — |
 | schema/hallucination | validator | drop AI finding + `AI partial` | yes rules remain | log ai_run failed |
 | worker crash | heartbeat lost | FAILED + reconciler | new upload | startup sweep orphans |
@@ -590,7 +602,7 @@ E2E: 9 corpus through full pipeline, golden compare, demo script rehearsal.
 
 * local gold: `docker compose up --build` on Linux recommended (Ubuntu 22.04+). Windows dev: frontend/api only natively, worker+Ghidra via WSL2/Linux Docker.
 * hardware: 16GB min (1 job), 32GB for concurrency2; CPU 4c+ (Ghidra heavy); disk 30GB+ free (2GB×10 queue + PostgreSQL + headroom); GPU none.
-* network: host internet only for `LLM_BASE_URL` from api; worker internal. Offline works with `AI_ENABLED=false`.
+* network: provider calls originate only from API. Worker remains internal. Offline analysis preserves deterministic results and reports AI as unavailable/partial.
 * secrets: `.env` ignored, `.env.example` committed, inject via env/secret manager.
 * demo: precompute 3 SHAs into `artifacts_cache/`. Cache key is `sha256 + analysis_schema_version + toolchain_versions + rule_set_version + scoring_version + prompt_version + model`; never reuse a stale result solely by SHA. Store `sha→cache_record` with the version tuple. Video backup `demo_backup.mp4`. Live static path rehearsed, never depend on 15m live Ghidra.
 
@@ -598,7 +610,7 @@ E2E: 9 corpus through full pipeline, golden compare, demo script rehearsal.
 
 * M1 RE/pipeline: LIEF extract, Export.java, runner+timeout+cleanup, normalize v1.0, corpus src+manifest. Delivers M1 slice. Fallback if late → LIEF-only partial + fixtures keep others moving.
 * M2 backend/data/jobs: FastAPI+OpenAPI, models+migrations, Celery queue+states+SSE+TTL/reconciler, storage layout, fixtures Day3, integration owner. Owns `main` freeze.
-* M3 AI/detection: rules YAML+detectors+scoring, ranking+3 prompts+adapter+validate/cache, ATT&CK qualify, eval expected + thresholds. Fallback if late → rule-only ship.
+* M3 AI/detection: rules YAML+detectors+scoring, ranking+3 prompts+adapter+validate/cache, bounded tool use, evidence assessment, ATT&CK qualify, and evaluation.
 * M4 frontend/viz: 7 routes, tables+pagination+search, Cytoscape focused, finding/evidence UX, report view, degraded banners, anti-slop CSS. Builds on fixtures from Day3.
 Handoffs: M1 JSON sample Day3 → M2 fixtures → M4 unblocked; M2 OpenAPI Day5 → M3/M4; M3 rules Day8 → M2/M4 findings UI.
 
@@ -613,7 +625,7 @@ Handoffs: M1 JSON sample Day3 → M2 fixtures → M4 unblocked; M2 OpenAPI Day5 
 
 ## 43. Critical Path
 
-`Ghidra Export.java + normalize v1.0 + DB ingest` blocks everything. Second `rule groups + scoring` blocks findings/score/ATT&CK/AI Stage2. Mitigate with fixtures + LIEF-only mode from Day3. LLM availability explicitly off critical path (rule-only demo passes).
+`Ghidra Export.java + normalize v1.0 + DB ingest` blocks rich tool-assisted analysis. Second `rule groups + scoring` blocks findings/score/ATT&CK correlation. Mitigate with fixtures and generic fallback. A provider outage preserves deterministic output but cannot produce a completed AI assessment.
 
 ## 44. Cut Strategy
 
@@ -621,7 +633,7 @@ Order LOCKED + remaining:
 1. PDF already cut → Markdown remains.
 2. AI ATT&CK qualify → rule candidates + `rule-only` label, report still valid.
 3. Full graph → focused subgraph + counts + JSON export, investigation still possible.
-4. Stage2/3 → Stage1 summaries only, findings rule-based, report template without synthesis.
+4. Reduce function-summary context before reducing automatic evidence correlation and report synthesis.
 5. K50→20 → cost -60%, still shows AI value; remove AI only after → static tool still demoable as `Ghidra+LIEF+rules dashboard`.
 
 ## 45. Demo Plan
@@ -637,7 +649,7 @@ Order LOCKED + remaining:
 ## 46. Demo Failure Plan
 
 * Ghidra slow/fail → show precomputed SHA cache instantly, note `live would take 15m`.
-* AI down/no key → banner `AI disabled — static available`, rule findings + breakdown still impress.
+* AI down/no key → banner `AI unavailable — deterministic static results available`; analysis stays PARTIAL.
 * no network → local static+Ghidra works, LLM mocked summary from cache labeled `cached demo`.
 * frontend break → fallback `curl overview/findings/report` JSON + pre-exported Markdown.
 * wrong binary → 400 copy rehearsed, switch to known good.
@@ -678,8 +690,8 @@ Document version 1.3. Static-only; PE x64 first; LIEF meta / Ghidra funcs; JSON 
 
 ## 50. Definition of Done
 
-* hello PE x64 + inject/persist synthetics end-to-end COMPLETED; Ghidra timeout → PARTIAL static; AI off → rule-only + banner.
+* Parser-supported and unknown-format samples complete their appropriate paths; tool timeout or AI failure → PARTIAL with deterministic output retained.
 * every high finding has evidence link resolving to func/import/string; ATT&CK qualified with rationale; score = `min(100,sum)` reproducible + breakdown shown.
-* AI schemas reject score/sev/conf, ids validated, repair≤2, grounding <2%, P/R≥90% ATT&CK≥85% on 9 corpus (prototype label).
+* AI assessment schema enforces the verdict enum, evidence grounding, uncertainty, strict fields, and no AI-authored score/severity/confidence; tool requests are allow-listed and bounded.
 * 7 routes + SSE + Markdown + delete/TTL + reconciler working in Compose on 16GB; worker 8g, no internet egress code, no secrets in logs/images.
 * demo script 5min runs from cache + live static, video backup exists, `main` frozen, this spec + OpenAPI + golden in repo.

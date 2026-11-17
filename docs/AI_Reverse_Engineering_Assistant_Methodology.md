@@ -1,5 +1,7 @@
 # AI-Assisted Static Reverse Engineering: Proposed Methodology for Evidence-First Triage of Portable Executable Binaries
 
+> HISTORICAL PROPOSAL: Current product behavior is governed by `docs/SPEC.md` Amendment 1.5. This methodology predates arbitrary-file ingestion, automatic AI tool use, and evidence-based verdicts.
+
 *Academic submission — System design, modules, and algorithms*
 
 **Name:** ____________________ | **Roll No.:** __________ | **Course:** __________

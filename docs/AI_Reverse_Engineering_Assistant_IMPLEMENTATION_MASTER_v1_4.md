@@ -1,5 +1,7 @@
 # AI Reverse Engineering Assistant — Implementation Master Specification
 
+> SUPERSEDED: Read `docs/SPEC.md` Amendment 1.5. Its approved AI-centered analysis direction overrides conflicting rules in this historical v1.4 document.
+
 ## 0. Document Control
 
 * document version: `1.4`

@@ -21,6 +21,14 @@
 
 Intentional deviations from `docs/SPEC.md` are recorded here. Newest entries first.
 
+## 2026-11-17 — Approved AI-centered analysis direction
+
+- Replaced the earlier AI-optional, explanation-only direction with an automatic multi-stage AI pipeline that can request bounded, allow-listed static analysis tools.
+- Added arbitrary regular-file ingestion with format-specific parsers where available and a limited generic static fallback otherwise. The system never executes uploaded content or sends raw file bytes to the model.
+- Added evidence-based AI assessment labels `LIKELY_MALICIOUS`, `LIKELY_BENIGN`, and `INCONCLUSIVE`; the assessment must cite current-analysis evidence and preserve uncertainty.
+- Kept deterministic findings, score, severity, confidence, and ATT&CK ceilings outside AI control. Provider or tool failure preserves deterministic results and produces an honest partial/degraded state.
+- Supersedes SPEC §§1–13, 26–30, 34, 38–50 and conflicting Member 2 guide rules. Prompt/output contract versions must be bumped when implemented.
+
 ## 2026-11-16 — Ghidra headless integration
 
 - Implemented real headless Ghidra execution and a Java exporter for function addresses/names/signatures, decompiled pseudocode, assembly, and direct internal call edges; normalized JSON now carries real toolchain versions and accurate decompilation status.
