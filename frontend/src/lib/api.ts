@@ -77,6 +77,53 @@ export interface FunctionDetailView {
   ai_summary: AiSummaryView | null;
   decompiled_full: string | null;
   artifact_truncated: boolean | null;
+  signature?: string | null;
+  size?: number | null;
+  assembly_excerpt?: string | null;
+}
+
+export interface FunctionView {
+  id: string;
+  address: string;
+  name: string;
+  centrality: number;
+  decompilerStatus: string;
+  decompiledExcerpt: string | null;
+  artifactAvailable: boolean;
+}
+
+export interface CallEdgeView { caller: string; callee: string; type: string }
+export interface StaticGraphView { functions: FunctionView[]; edges: CallEdgeView[] }
+
+function mapFunction(item: any): FunctionView {
+  return {
+    id: item.id,
+    address: item.address,
+    name: item.name ?? "Unnamed function",
+    centrality: item.centrality ?? 0,
+    decompilerStatus: item.decompiler_status ?? "NOT_RUN",
+    decompiledExcerpt: item.decompiled_excerpt ?? null,
+    artifactAvailable: item.artifact_available ?? Boolean(item.artifact),
+  };
+}
+
+export async function getFunctions(analysisId: string): Promise<FunctionView[]> {
+  if (USE_FIXTURES) return fixtureFor(analysisId).functions.map(mapFunction);
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(analysisId)}/functions`);
+  if (!response.ok) throw new Error("Could not load functions.");
+  const data = await response.json();
+  return (data.items ?? []).map(mapFunction);
+}
+
+export async function getStaticGraph(analysisId: string): Promise<StaticGraphView> {
+  if (USE_FIXTURES) return { functions: fixtureFor(analysisId).functions.map(mapFunction), edges: [] };
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(analysisId)}/static`);
+  if (!response.ok) throw new Error("Could not load static graph data.");
+  const data = await response.json();
+  return {
+    functions: (data.functions ?? []).map(mapFunction),
+    edges: (data.edges ?? []).map((edge: any) => ({ caller: edge.caller, callee: edge.callee, type: edge.type ?? "call" })),
+  };
 }
 
 type FuncRow = { id: string; address: string; name: string; centrality: number; decompiler_status: string; decompiled_excerpt: string | null };

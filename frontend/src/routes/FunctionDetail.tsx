@@ -26,7 +26,7 @@ export function FunctionDetailPage({ analysisId, fid, navigate }: { analysisId: 
   useEffect(() => {
     let active = true;
     setDetail(null); setError(""); setBusy(true);
-    getFunctionDetail(analysisId, fid).then((result) => {
+    getFunctionDetail(analysisId, fid, true).then((result) => {
       if (active) { setDetail(result); setBusy(false); }
     }).catch((reason: unknown) => {
       if (active) { setError(reason instanceof Error ? reason.message : "Could not load function detail."); setBusy(false); }
@@ -50,10 +50,26 @@ export function FunctionDetailPage({ analysisId, fid, navigate }: { analysisId: 
       <div className="panel-heading"><div><div className="eyebrow">FUNCTION METADATA</div><h2>Static function</h2></div></div>
       <dl className="identity-grid">
         <div><dt>Address</dt><dd className="mono">{detail.address}</dd></div>
+        <div><dt>Size</dt><dd>{detail.size ?? "Not available"}</dd></div>
+        <div><dt>Signature</dt><dd>{detail.signature ?? "Not available"}</dd></div>
         <div><dt>Centrality</dt><dd>{(detail.centrality * 100).toFixed(1)}%</dd></div>
         <div><dt>Decompiler</dt><dd><span className={`status-pill status-${detail.decompiler_status.toLowerCase() === "ok" ? "completed" : "failed"}`}>{detail.decompiler_status}</span></dd></div>
         <div><dt>Artifact</dt><dd>{detail.artifact_available ? "Available" : "Not available"}</dd></div>
       </dl>
+    </section>
+
+    <section className="panel">
+      <div className="panel-heading"><h2>Decompiled code</h2></div>
+      {detail.decompiled_full || detail.decompiled_excerpt
+        ? <pre className="code-view"><code>{detail.decompiled_full ?? detail.decompiled_excerpt}</code></pre>
+        : <div className="empty-state">Decompiled code is not available for this function.</div>}
+    </section>
+
+    <section className="panel">
+      <div className="panel-heading"><h2>Assembly excerpt</h2></div>
+      {detail.assembly_excerpt
+        ? <pre className="code-view"><code>{detail.assembly_excerpt}</code></pre>
+        : <div className="empty-state">Assembly information is not available for this function.</div>}
     </section>
 
     <section className="panel ai-interpretation-panel">
