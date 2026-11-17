@@ -43,8 +43,15 @@ Do not implement the following spec items; leave a `TODO(spec §N)` comment at t
 
 ## Detection and Ghidra constraints
 - Implement Python detectors only for `G_INJECTION`, `G_REG_PERSIST`, `G_DOWNLOAD`, and `G_ANTIANALYSIS`. Keep other rules as simple YAML matches.
-- `GHIDRA_MODE=fixture` is the default until the real runner is proven. Every fixture result must be labeled `source: fixture` in both API and UI.
+- The default is real Ghidra after the PE x64 smoke test passed on 2026-11-16; use `GHIDRA_MODE=fixture` explicitly for fixture tests. Every fixture result must be labeled `source: fixture` in both API and UI.
 - Ghidra is a late optional step; preserve honest PARTIAL behavior when it is unavailable.
 
 ## Part-end handoff
 At the end of every implementation part, report: (1) what works, (2) exact commands to run it, (3) what is stubbed, and (4) estimated overall project completion percentage.
+
+evidance table
+Field	Ghidra 12.1.3	OpenJDK 21
+Filename	ghidra_12.1.3_PUBLIC_20260817.zip	openjdk-21-jdk_21.0.13.0.3+1-1~24.04.1_amd64.deb
+SHA-256	93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54	c41deec84855a9edccc24b9af310e97e07fa84c675df89eb4eb8faec10e58bd3
+Date	2026-08-18 (release)	2026-11-16 (download)
+Download URL	Ghidra official ZIP	Ubuntu JDK package

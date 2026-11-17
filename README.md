@@ -4,7 +4,7 @@ Evidence-first assistant for static reverse engineering. It analyzes uploaded bi
 
 ## Status
 
-The current vertical slice validates uploads, statically extracts PE x64 metadata with pinned LIEF, stores normalized JSON and metadata in PostgreSQL, and exposes upload/status/SSE/static-data/delete APIs. Ghidra, detection, and AI stages are still placeholders, so results end as `PARTIAL`. See `docs/SPEC.md` and `AGENTS.md` for the product contract and permanent project rules.
+The worker statically extracts PE x64 metadata with pinned LIEF, and includes a real Ghidra headless runner that exports function names, addresses, decompiled pseudocode, assembly, and direct call edges before normalization and deterministic detection. The worker image includes Ghidra 12.1.3 and JDK 21. AI analysis remains disabled, so pipeline results are still marked `PARTIAL`. See `docs/SPEC.md` and `AGENTS.md` for the product contract and permanent project rules.
 
 ## Requirements
 
@@ -98,6 +98,10 @@ Remove-Item -LiteralPath tiny-pe.exe
 
 Stop the stack with `docker compose down` (named volumes are retained).
 
+## Ghidra
+
+The Compose worker defaults to `GHIDRA_MODE=real`, using the installed headless toolchain. Set `GHIDRA_MODE=fixture` to use checked-in fixtures for tests. `GHIDRA_TIMEOUT_SECONDS` controls the real analyzer timeout (default: 900 seconds). Fixture results remain labeled as fixture output.
+
 ## Development
 
-The frontend and Ghidra/detection/AI stages remain placeholders. Add tests with each feature and preserve the static-only, evidence-first boundary.
+Add tests with each feature and preserve the static-only, evidence-first boundary. Uploaded binaries are imported for static analysis only and are never executed by the application.

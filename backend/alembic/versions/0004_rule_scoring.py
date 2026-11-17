@@ -9,8 +9,8 @@ means these columns already exist before this revision is reached.
 """
 
 from alembic import op
-import sqlalchemy as sa
 from sqlalchemy import inspect
+import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "0004_rule_scoring"

@@ -40,7 +40,7 @@ from worker.normalize import (
     normalize_analysis,
     serialize_normalized,
 )
-from worker.ghidra_runner import GhidraRunner
+from worker.ghidra_runner import GhidraExecutionError, GhidraRunner
 from worker.rules.engine import detect_analysis
 
 logger = get_task_logger(__name__)
@@ -131,11 +131,8 @@ def _persist_functions(analysis_id: str, normalized: dict) -> None:
         if analysis is None or analysis.status in {"CANCELLED", "FAILED"}:
             return
         analysis.ghidra_source = normalized["source"]
-        analysis.decomp_status = (
-            "OK"
-            if normalized["source"] == "fixture" and normalized["functions"]
-            else "NOT_RUN"
-        )
+        analysis.decomp_status = normalized["decomp_status"]
+        analysis.toolchain = {**analysis.toolchain, **normalized["toolchain"]}
         function_rows = []
         for row in normalized["functions"]:
             artifact = row["artifact"]
@@ -557,10 +554,15 @@ def analyze(self, analysis_id: str):
 
         _enter_stage(analysis_id, "RE_ANALYSIS", 35)
         try:
-            ghidra_result = GhidraRunner().run(analysis_id, original_filename)
-        except NotImplementedError:
-            # Honest static-only fallback until Prompt 11 supplies the real runner.
-            ghidra_result = {"source": "none", "functions": [], "edges": []}
+            ghidra_result = GhidraRunner().run(
+                analysis_id, original_filename, binary_path=upload_path, work_dir=temp_dir,
+            )
+        except GhidraExecutionError as exc:
+            logger.warning("ghidra_analysis_unavailable: %s", exc)
+            ghidra_result = {
+                "source": "none", "decomp_status": "FAILED", "functions": [], "edges": [],
+                "toolchain": {"ghidra": "unknown", "jdk": "unknown"},
+            }
 
         _enter_stage(analysis_id, "NORMALIZING", 50)
         with new_session() as session:
@@ -654,10 +656,28 @@ def analyze(self, analysis_id: str):
                         analysis.error_message
                         or "Static findings were saved, but the pipeline AI stage could not complete."
                     )
+                if analysis.decomp_status != "OK":
+                    if normalized["decomp_status"] == "TIMEOUT":
+                        ghidra_summary = "Ghidra analysis timed out; decompilation is incomplete."
+                    elif normalized["decomp_status"] == "FAILED":
+                        ghidra_summary = "Ghidra analysis failed or is unavailable; decompilation is incomplete."
+                    elif normalized["source"] == "fixture":
+                        ghidra_summary = "Fixture decompilation output is incomplete."
+                    else:
+                        ghidra_summary = "Ghidra analysis was not run; decompilation is incomplete."
+                    analysis.error_message = f"{analysis.error_message} {ghidra_summary}"
             elif analysis.decomp_status != "OK":
                 transition_analysis(analysis, "PARTIAL", 95)
+                if normalized["decomp_status"] == "TIMEOUT":
+                    ghidra_summary = "Ghidra analysis timed out."
+                elif normalized["decomp_status"] == "FAILED":
+                    ghidra_summary = "Ghidra analysis failed or is unavailable."
+                elif normalized["source"] == "fixture":
+                    ghidra_summary = "Fixture decompilation output was incomplete."
+                else:
+                    ghidra_summary = "Ghidra analysis was not run."
                 analysis.error_code = "DECOMP_INCOMPLETE"
-                analysis.error_message = "The AI report and static findings were saved, but decompilation did not complete. Results are partial."
+                analysis.error_message = f"The AI report and static findings were saved, but {ghidra_summary.lower()} Results are partial."
             else:
                 transition_analysis(analysis, "COMPLETED", 100)
                 analysis.error_code = None
