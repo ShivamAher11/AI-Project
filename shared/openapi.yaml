@@ -1,0 +1,351 @@
+openapi: 3.0.3
+info:
+  title: AI Reverse Engineering Assistant
+  version: 1.0.0
+  description: Evidence-first static reverse-engineering assistant API.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local API
+paths:
+  /analyses:
+    post:
+      summary: Upload a binary for analysis
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Analysis created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+        '400':
+          description: Bad request
+        '413':
+          description: Payload too large
+        '429':
+          description: Queue full
+  /analyses/{analysis_id}/status:
+    get:
+      summary: Get analysis status
+      parameters:
+        - in: path
+          name: analysis_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Status snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                  stage:
+                    type: string
+                  progress:
+                    type: integer
+                  decomp_status:
+                    type: string
+                    enum: [OK, FAILED, TIMEOUT, NOT_RUN]
+                  ai_status:
+                    type: string
+                    enum: [OK, DEGRADED, DISABLED, NOT_RUN, FAILED]
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      message:
+                        type: string
+        '404':
+          description: Not found
+  /analyses/{analysis_id}/overview:
+    get:
+      summary: Get analysis overview
+      parameters:
+        - in: path
+          name: analysis_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: object
+                    properties:
+                      filename:
+                        type: string
+                      format:
+                        type: string
+                      arch:
+                        type: string
+                      size:
+                        type: integer
+                      entry_point:
+                        type: string
+                  hashes:
+                    type: object
+                    properties:
+                      sha256:
+                        type: string
+                      md5:
+                        type: string
+                  risk:
+                    type: object
+                    properties:
+                      score:
+                        type: integer
+                      rating:
+                        type: string
+                      breakdown:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            title:
+                              type: string
+                            weight:
+                              type: integer
+                  top_findings:
+                    type: array
+                    items:
+                      type: object
+                  counts:
+                    type: object
+                    properties:
+                      sections:
+                        type: integer
+                      imports:
+                        type: integer
+                      strings:
+                        type: integer
+                      functions:
+                        type: integer
+                      findings:
+                        type: integer
+                  versions:
+                    type: object
+                    properties:
+                      scoring:
+                        type: string
+                      rules:
+                        type: string
+                      schema:
+                        type: string
+                  states:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      decomp_status:
+                        type: string
+                      ai_status:
+                        type: string
+                      source:
+                        type: string
+                  ai_report:
+                    type: object
+                    nullable: true
+                  prior_ids:
+                    type: array
+                    items:
+                      type: string
+        '404':
+          description: Not found
+  /analyses/{analysis_id}/functions:
+    get:
+      summary: List functions
+      parameters:
+        - in: path
+          name: analysis_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Function list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        address:
+                          type: string
+                        name:
+                          type: string
+                        centrality:
+                          type: number
+                        decompiler_status:
+                          type: string
+                        decompiled_excerpt:
+                          type: string
+                        artifact_available:
+                          type: boolean
+                  next_cursor:
+                    type: string
+        '404':
+          description: Not found
+  /analyses/{analysis_id}/functions/{fid}:
+    get:
+      summary: Get function detail
+      parameters:
+        - in: path
+          name: analysis_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: fid
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: load_full
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Function detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  address:
+                    type: string
+                  name:
+                    type: string
+                  centrality:
+                    type: number
+                  decompiler_status:
+                    type: string
+                  decompiled_excerpt:
+                    type: string
+                    nullable: true
+                  artifact_available:
+                    type: boolean
+                  ai_summary:
+                    type: object
+                    nullable: true
+                    properties:
+                      schema_version:
+                        type: string
+                      function_id:
+                        type: string
+                      purpose:
+                        type: string
+                      behavior:
+                        type: array
+                        items:
+                          type: string
+                      evidence_ids:
+                        type: array
+                        items:
+                          type: string
+                      suspicious_indicators:
+                        type: array
+                        items:
+                          type: string
+                      uncertainty:
+                        type: string
+                      alternative_explanation:
+                        type: string
+                      suggested_technique_id:
+                        type: string
+                        nullable: true
+                      rationale:
+                        type: string
+                  decompiled_full:
+                    type: string
+                    nullable: true
+                  artifact_truncated:
+                    type: boolean
+        '404':
+          description: Not found
+  /ai/status:
+    get:
+      summary: AI configuration status
+      responses:
+        '200':
+          description: AI status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  provider:
+                    type: string
+                  model:
+                    type: string
+                    nullable: true
+                  endpoint_host:
+                    type: string
+                    nullable: true
+                  reason:
+                    type: string
+                    nullable: true
+  /ai/test:
+    post:
+      summary: Test AI connection
+      responses:
+        '200':
+          description: Connection OK
+        '503':
+          description: AI disabled
+        '502':
+          description: Provider unavailable
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+security: []

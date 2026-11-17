@@ -2,6 +2,8 @@ import logging
 import os
 import threading
 import time
+
+import httpx
 from datetime import datetime, timezone
 from uuid import UUID, uuid5
 
@@ -10,13 +12,35 @@ from sqlalchemy import select
 
 from app.celery_app import celery_app
 from app.db import new_session
-from app.models import Analysis, CallEdge, ExportSymbol, Function, ImportSymbol, Section, StringRecord
+from app.models import (
+    Analysis,
+    CallEdge,
+    ExportSymbol,
+    Function,
+    ImportSymbol,
+    Section,
+    StringRecord,
+)
 from app.models import AttackMapping, Evidence, Finding, Signal
 from app.state_machine import InvalidStateTransition, transition_analysis
-from app.storage import artifact_dir_path, remove_temporary_artifacts, resolve_under, upload_file_path
-from worker.lief_extract import InvalidBinary, UnsupportedArchitecture, extract_pe, load_import_categories
-from worker.normalize import NormalizationError, normalize_analysis, serialize_normalized
-from worker.ghidra_runner import GhidraRunner
+from app.storage import (
+    artifact_dir_path,
+    remove_temporary_artifacts,
+    resolve_under,
+    upload_file_path,
+)
+from worker.lief_extract import (
+    InvalidBinary,
+    UnsupportedArchitecture,
+    extract_pe,
+    load_import_categories,
+)
+from worker.normalize import (
+    NormalizationError,
+    normalize_analysis,
+    serialize_normalized,
+)
+from worker.ghidra_runner import GhidraExecutionError, GhidraRunner
 from worker.rules.engine import detect_analysis
 
 logger = get_task_logger(__name__)
@@ -34,8 +58,15 @@ PIPELINE_STAGES = [
 
 def _mark_failed(analysis_id: str, code: str, message: str) -> None:
     with new_session() as session:
-        analysis = session.scalar(select(Analysis).where(Analysis.id == UUID(analysis_id)).with_for_update())
-        if analysis is not None and analysis.status not in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"}:
+        analysis = session.scalar(
+            select(Analysis).where(Analysis.id == UUID(analysis_id)).with_for_update()
+        )
+        if analysis is not None and analysis.status not in {
+            "COMPLETED",
+            "PARTIAL",
+            "FAILED",
+            "CANCELLED",
+        }:
             transition_analysis(analysis, "FAILED")
             analysis.error_code = code
             analysis.error_message = message
@@ -45,7 +76,9 @@ def _mark_failed(analysis_id: str, code: str, message: str) -> None:
 def _persist_static_metadata(analysis_id: str, static: dict) -> None:
     analysis_uuid = UUID(analysis_id)
     with new_session() as session:
-        analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
+        analysis = session.scalar(
+            select(Analysis).where(Analysis.id == analysis_uuid).with_for_update()
+        )
         if analysis is None or analysis.status in {"CANCELLED", "FAILED"}:
             return
         analysis.sha256 = static["sha256"]
@@ -92,30 +125,47 @@ def _write_normalized(data_root: str, analysis_id: str, normalized: dict) -> Non
 def _persist_functions(analysis_id: str, normalized: dict) -> None:
     analysis_uuid = UUID(analysis_id)
     with new_session() as session:
-        analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
+        analysis = session.scalar(
+            select(Analysis).where(Analysis.id == analysis_uuid).with_for_update()
+        )
         if analysis is None or analysis.status in {"CANCELLED", "FAILED"}:
             return
         analysis.ghidra_source = normalized["source"]
-        analysis.decomp_status = "OK" if normalized["source"] == "fixture" and normalized["functions"] else "NOT_RUN"
+        analysis.decomp_status = normalized["decomp_status"]
+        analysis.toolchain = {**analysis.toolchain, **normalized["toolchain"]}
         function_rows = []
         for row in normalized["functions"]:
             artifact = row["artifact"]
-            function_rows.append(Function(
-                id=row["id"], analysis_id=analysis_uuid, address=row["address"], name=row["name"],
-                signature=row["signature"], size=row["size"], decompiler_status=row["decompiler_status"],
-                centrality=row["centrality"], assembly_excerpt=row["assembly_excerpt"],
-                decompiled_excerpt=row["decompiled_excerpt"],
-                artifact_path=artifact["path"] if artifact else None,
-                artifact_sha256=artifact["sha256"] if artifact else None,
-                artifact_size=artifact["size"] if artifact else None,
-            ))
+            function_rows.append(
+                Function(
+                    id=row["id"],
+                    analysis_id=analysis_uuid,
+                    address=row["address"],
+                    name=row["name"],
+                    signature=row["signature"],
+                    size=row["size"],
+                    decompiler_status=row["decompiler_status"],
+                    centrality=row["centrality"],
+                    assembly_excerpt=row["assembly_excerpt"],
+                    decompiled_excerpt=row["decompiled_excerpt"],
+                    artifact_path=artifact["path"] if artifact else None,
+                    artifact_sha256=artifact["sha256"] if artifact else None,
+                    artifact_size=artifact["size"] if artifact else None,
+                )
+            )
         session.add_all(function_rows)
         # CallEdge has a string FK to Function.id; force function rows first so the
         # database FK is satisfied independently of ORM relationship ordering.
         session.flush()
         for row in normalized["edges"]:
-            session.add(CallEdge(analysis_id=analysis_uuid, caller_id=row["caller"],
-                                 callee_id=row["callee"], edge_type=row["type"]))
+            session.add(
+                CallEdge(
+                    analysis_id=analysis_uuid,
+                    caller_id=row["caller"],
+                    callee_id=row["callee"],
+                    edge_type=row["type"],
+                )
+            )
         session.commit()
 
 
@@ -124,7 +174,9 @@ def _persist_detection(analysis_id: str, normalized: dict, result: dict) -> None
     analysis_uuid = UUID(analysis_id)
     refs = result["evidence"]
     with new_session() as session:
-        analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
+        analysis = session.scalar(
+            select(Analysis).where(Analysis.id == analysis_uuid).with_for_update()
+        )
         if analysis is None or analysis.status in {"CANCELLED", "FAILED"}:
             return
         analysis.risk_score = result["scoring"]["score"]
@@ -134,10 +186,25 @@ def _persist_detection(analysis_id: str, normalized: dict, result: dict) -> None
         analysis.scoring_input_hash = result["scoring"]["input_hash"]
         analysis.scoring_breakdown = result["scoring"]["breakdown"]
 
-        imports = list(session.scalars(select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_uuid)))
-        strings = list(session.scalars(select(StringRecord).where(StringRecord.analysis_id == analysis_uuid)))
-        sections = list(session.scalars(select(Section).where(Section.analysis_id == analysis_uuid)))
-        functions = {row.id: row for row in session.scalars(select(Function).where(Function.analysis_id == analysis_uuid))}
+        imports = list(
+            session.scalars(
+                select(ImportSymbol).where(ImportSymbol.analysis_id == analysis_uuid)
+            )
+        )
+        strings = list(
+            session.scalars(
+                select(StringRecord).where(StringRecord.analysis_id == analysis_uuid)
+            )
+        )
+        sections = list(
+            session.scalars(select(Section).where(Section.analysis_id == analysis_uuid))
+        )
+        functions = {
+            row.id: row
+            for row in session.scalars(
+                select(Function).where(Function.analysis_id == analysis_uuid)
+            )
+        }
 
         def resolve(ref: str) -> tuple[str, str]:
             item = refs.get(ref)
@@ -145,7 +212,9 @@ def _persist_detection(analysis_id: str, normalized: dict, result: dict) -> None
                 raise ValueError("Detector emitted an unknown evidence reference.")
             source_type, key = item["source_type"], item["source_key"]
             if source_type == "import":
-                row = next((r for r in imports if [r.library, r.name, r.address] == key), None)
+                row = next(
+                    (r for r in imports if [r.library, r.name, r.address] == key), None
+                )
             elif source_type == "string":
                 row = next((r for r in strings if [r.offset, r.value] == key), None)
             elif source_type == "section":
@@ -158,22 +227,47 @@ def _persist_detection(analysis_id: str, normalized: dict, result: dict) -> None
                 return source_type, str(key)
             else:
                 row = None
-            if row is None or getattr(row, "analysis_id", analysis_uuid) != analysis_uuid:
-                raise ValueError("Detector evidence source does not belong to this analysis.")
+            if (
+                row is None
+                or getattr(row, "analysis_id", analysis_uuid) != analysis_uuid
+            ):
+                raise ValueError(
+                    "Detector evidence source does not belong to this analysis."
+                )
             return source_type, str(getattr(row, "id", analysis_uuid))
 
-        signal_rows = [Signal(id=sig["signal_id"], analysis_id=analysis_uuid, rule_id=sig["rule_id"],
-                              function_ids=sig["function_ids"], evidence_refs=sig["evidence_refs"])
-                       for sig in result["signals"]]
+        signal_rows = [
+            Signal(
+                id=sig["signal_id"],
+                analysis_id=analysis_uuid,
+                rule_id=sig["rule_id"],
+                function_ids=sig["function_ids"],
+                evidence_refs=sig["evidence_refs"],
+            )
+            for sig in result["signals"]
+        ]
         session.add_all(signal_rows)
         finding_ids = {}
         for finding in result["findings"]:
             fid = uuid5(analysis_uuid, finding["rule_id"])
             finding_ids[finding["rule_id"]] = fid
-            session.add(Finding(id=fid, analysis_id=analysis_uuid, type="rule", title=finding["title"],
-                severity=finding["severity"], confidence=finding["confidence"], confidence_score=finding["confidence_score"],
-                description=finding["description"], interpretation=finding["interpretation"], alternative=finding["alternative"],
-                score_contribution=finding["weight"], group_id=finding["group_id"], signal_ids=finding["signal_ids"]))
+            session.add(
+                Finding(
+                    id=fid,
+                    analysis_id=analysis_uuid,
+                    type="rule",
+                    title=finding["title"],
+                    severity=finding["severity"],
+                    confidence=finding["confidence"],
+                    confidence_score=finding["confidence_score"],
+                    description=finding["description"],
+                    interpretation=finding["interpretation"],
+                    alternative=finding["alternative"],
+                    score_contribution=finding["weight"],
+                    group_id=finding["group_id"],
+                    signal_ids=finding["signal_ids"],
+                )
+            )
         session.flush()
         for finding in result["findings"]:
             fid = finding_ids[finding["rule_id"]]
@@ -182,20 +276,42 @@ def _persist_detection(analysis_id: str, normalized: dict, result: dict) -> None
             for ref in finding["evidence_refs"]:
                 source_type, source_id = resolve(ref)
                 item = refs[ref]
-                session.add(Evidence(id=uuid5(fid, ref), analysis_id=analysis_uuid, finding_id=fid, evidence_type=finding["rule_id"],
-                    source_type=source_type, source_id=source_id, excerpt=item["excerpt"],
-                    offset_or_address=item.get("offset"), reason=item.get("reason")))
+                session.add(
+                    Evidence(
+                        id=uuid5(fid, ref),
+                        analysis_id=analysis_uuid,
+                        finding_id=fid,
+                        evidence_type=finding["rule_id"],
+                        source_type=source_type,
+                        source_id=source_id,
+                        excerpt=item["excerpt"],
+                        offset_or_address=item.get("offset"),
+                        reason=item.get("reason"),
+                    )
+                )
             for mapping in finding["attack_mappings"]:
-                session.add(AttackMapping(finding_id=fid, technique_id=mapping["technique_id"],
-                    technique_name=mapping["technique_name"], confidence=mapping["confidence"],
-                    confidence_score=mapping["confidence_score"], rationale=mapping["rationale"]))
+                session.add(
+                    AttackMapping(
+                        finding_id=fid,
+                        technique_id=mapping["technique_id"],
+                        technique_name=mapping["technique_name"],
+                        confidence=mapping["confidence"],
+                        confidence_score=mapping["confidence_score"],
+                        rationale=mapping["rationale"],
+                    )
+                )
         session.commit()
 
 
 def _touch_heartbeat(analysis_id: str) -> None:
     with new_session() as session:
         analysis = session.get(Analysis, UUID(analysis_id))
-        if analysis is not None and analysis.status not in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"}:
+        if analysis is not None and analysis.status not in {
+            "COMPLETED",
+            "PARTIAL",
+            "FAILED",
+            "CANCELLED",
+        }:
             analysis.heartbeat_at = datetime.now(timezone.utc)
             session.commit()
 
@@ -208,10 +324,179 @@ def _heartbeat_loop(analysis_id: str, stop: threading.Event) -> None:
             logger.warning("analysis_heartbeat_update_failed")
 
 
+def _run_pipeline_ai_stage(analysis_id: str) -> tuple[str, str | None, str | None]:
+    """Ask the API to run AI; the isolated worker never calls the LLM endpoint directly."""
+    token = os.getenv("PIPELINE_AI_INTERNAL_TOKEN", "").strip()
+    if len(token) < 32:
+        return (
+            "DISABLED",
+            "PIPELINE_AI_NOT_CONFIGURED",
+            "Pipeline AI was skipped because PIPELINE_AI_INTERNAL_TOKEN is missing or shorter than 32 characters.",
+        )
+
+    base_url = os.getenv(
+        "PIPELINE_AI_API_URL", "http://api:8000/api/v1/ai/internal/analyses"
+    ).rstrip("/")
+    try:
+        timeout_s = max(
+            10.0, min(240.0, float(os.getenv("PIPELINE_AI_REQUEST_TIMEOUT_S", "150")))
+        )
+    except ValueError:
+        timeout_s = 150.0
+    try:
+        response = httpx.post(
+            f"{base_url}/{analysis_id}/pipeline",
+            headers={"X-Pipeline-AI-Token": token, "Accept": "application/json"},
+            timeout=timeout_s,
+        )
+    except httpx.TimeoutException:
+        return (
+            "DEGRADED",
+            "AI_PIPELINE_TIMEOUT",
+            "The API-mediated AI stage timed out; deterministic static findings remain available.",
+        )
+    except httpx.RequestError:
+        return (
+            "DEGRADED",
+            "AI_API_UNAVAILABLE",
+            "The worker could not reach the internal API for the AI stage; deterministic static findings remain available.",
+        )
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    if (
+        response.status_code == 200
+        and payload.get("ok") is True
+        and isinstance(payload.get("report"), dict)
+    ):
+        return ("OK", None, None)
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    if code == "AI_DISABLED":
+        return (
+            "DISABLED",
+            "AI_DISABLED",
+            str(message or "The configured AI provider is disabled."),
+        )
+    if code == "PIPELINE_AI_NOT_CONFIGURED":
+        return (
+            "DISABLED",
+            code,
+            str(message or "The pipeline AI internal token is not configured."),
+        )
+    if code == "PIPELINE_AI_FORBIDDEN":
+        return (
+            "DEGRADED",
+            code,
+            "The API rejected the worker's internal pipeline token. Ensure the same PIPELINE_AI_INTERNAL_TOKEN is set for both services.",
+        )
+    if code == "AI_PROVIDER_UNAVAILABLE":
+        return (
+            "DEGRADED",
+            code,
+            "The configured Ollama-compatible endpoint did not complete the pipeline AI request.",
+        )
+    return (
+        "DEGRADED",
+        str(code or "AI_PIPELINE_FAILED"),
+        "The API-mediated AI stage failed; deterministic static findings remain available.",
+    )
+def _run_stage1_function_summaries(
+    analysis_id: str,
+) -> tuple[str, str | None, str | None]:
+    """Ask the API to run Stage 1 function summaries; worker never calls LLM directly."""
+    token = os.getenv("PIPELINE_AI_INTERNAL_TOKEN", "").strip()
+    if len(token) < 32:
+        return (
+            "DISABLED",
+            "PIPELINE_AI_NOT_CONFIGURED",
+            "Pipeline AI was skipped because PIPELINE_AI_INTERNAL_TOKEN is missing or shorter than 32 characters.",
+        )
+
+    base_url = os.getenv(
+        "PIPELINE_AI_API_URL", "http://api:8000/api/v1/ai/internal/analyses"
+    ).rstrip("/")
+    try:
+        timeout_s = max(
+            10.0, min(240.0, float(os.getenv("PIPELINE_AI_REQUEST_TIMEOUT_S", "150")))
+        )
+    except ValueError:
+        timeout_s = 150.0
+    try:
+        response = httpx.post(
+            f"{base_url}/{analysis_id}/function-summaries",
+            headers={"X-Pipeline-AI-Token": token, "Accept": "application/json"},
+            timeout=timeout_s,
+        )
+    except httpx.TimeoutException:
+        return (
+            "DEGRADED",
+            "AI_PIPELINE_TIMEOUT",
+            "The API-mediated Stage 1 AI stage timed out; deterministic static findings remain available.",
+        )
+    except httpx.RequestError:
+        return (
+            "DEGRADED",
+            "AI_API_UNAVAILABLE",
+            "The worker could not reach the internal API for Stage 1 AI; deterministic static findings remain available.",
+        )
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    if response.status_code == 200 and payload.get("ok") is True:
+        return ("OK", None, None)
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    if code == "AI_DISABLED":
+        return (
+            "DISABLED",
+            "AI_DISABLED",
+            str(message or "The configured AI provider is disabled."),
+        )
+    if code == "PIPELINE_AI_NOT_CONFIGURED":
+        return (
+            "DISABLED",
+            code,
+            str(message or "The pipeline AI internal token is not configured."),
+        )
+    if code == "PIPELINE_AI_FORBIDDEN":
+        return (
+            "DEGRADED",
+            code,
+            "The API rejected the worker's internal pipeline token. Ensure the same PIPELINE_AI_INTERNAL_TOKEN is set for both services.",
+        )
+    if code == "AI_PROVIDER_UNAVAILABLE":
+        return (
+            "DEGRADED",
+            code,
+            "The configured Ollama-compatible endpoint did not complete the Stage 1 AI request.",
+        )
+    return (
+        "DEGRADED",
+        str(code or "AI_PIPELINE_FAILED"),
+        "The API-mediated Stage 1 AI stage failed; deterministic static findings remain available.",
+    )
+
+
 def _enter_stage(analysis_id: str, stage: str, progress: int) -> None:
     with new_session() as session:
-        analysis = session.scalar(select(Analysis).where(Analysis.id == UUID(analysis_id)).with_for_update())
-        if analysis is None or analysis.status in {"CANCELLED", "FAILED", "COMPLETED", "PARTIAL"}:
+        analysis = session.scalar(
+            select(Analysis).where(Analysis.id == UUID(analysis_id)).with_for_update()
+        )
+        if analysis is None or analysis.status in {
+            "CANCELLED",
+            "FAILED",
+            "COMPLETED",
+            "PARTIAL",
+        }:
             return
         try:
             transition_analysis(analysis, stage, progress)
@@ -224,7 +509,9 @@ def _enter_stage(analysis_id: str, stage: str, progress: int) -> None:
 @celery_app.task(bind=True, name="worker.tasks.analyze", ignore_result=True)
 def analyze(self, analysis_id: str):
     stop_heartbeat = threading.Event()
-    heartbeat = threading.Thread(target=_heartbeat_loop, args=(analysis_id, stop_heartbeat), daemon=True)
+    heartbeat = threading.Thread(
+        target=_heartbeat_loop, args=(analysis_id, stop_heartbeat), daemon=True
+    )
     data_root = os.getenv("DATA_ROOT", "/data")
     analysis_uuid = UUID(analysis_id)
     heartbeat.start()
@@ -267,10 +554,15 @@ def analyze(self, analysis_id: str):
 
         _enter_stage(analysis_id, "RE_ANALYSIS", 35)
         try:
-            ghidra_result = GhidraRunner().run(analysis_id, original_filename)
-        except NotImplementedError:
-            # Honest static-only fallback until Prompt 11 supplies the real runner.
-            ghidra_result = {"source": "none", "functions": [], "edges": []}
+            ghidra_result = GhidraRunner().run(
+                analysis_id, original_filename, binary_path=upload_path, work_dir=temp_dir,
+            )
+        except GhidraExecutionError as exc:
+            logger.warning("ghidra_analysis_unavailable: %s", exc)
+            ghidra_result = {
+                "source": "none", "decomp_status": "FAILED", "functions": [], "edges": [],
+                "toolchain": {"ghidra": "unknown", "jdk": "unknown"},
+            }
 
         _enter_stage(analysis_id, "NORMALIZING", 50)
         with new_session() as session:
@@ -278,8 +570,13 @@ def analyze(self, analysis_id: str):
             if current is None or current.status == "CANCELLED":
                 return {"id": analysis_id, "status": "CANCELLED"}
             created_at = current.created_at
-        normalized = normalize_analysis(static, analysis_id, created_at=created_at,
-                                        ghidra_result=ghidra_result, data_root=data_root)
+        normalized = normalize_analysis(
+            static,
+            analysis_id,
+            created_at=created_at,
+            ghidra_result=ghidra_result,
+            data_root=data_root,
+        )
         _persist_functions(analysis_id, normalized)
         _write_normalized(data_root, analysis_id, normalized)
 
@@ -293,51 +590,126 @@ def analyze(self, analysis_id: str):
                 detection = detect_analysis(normalized)
                 normalized["signals"] = detection["signals"]
                 normalized["rule_hits"] = [
-                    {"rule_id": hit.rule_id, "function_ids": hit.function_ids, "evidence_refs": hit.evidence_refs,
-                     "weight": hit.weight, "absorbed": hit.absorbed, "signal_ids": list(hit.signal_ids)}
+                    {
+                        "rule_id": hit.rule_id,
+                        "function_ids": hit.function_ids,
+                        "evidence_refs": hit.evidence_refs,
+                        "weight": hit.weight,
+                        "absorbed": hit.absorbed,
+                        "signal_ids": list(hit.signal_ids),
+                    }
                     for hit in detection["hits"]
                 ]
                 normalized["findings"] = [
-                    {"finding_id": str(uuid5(analysis_uuid, finding["rule_id"])),
-                     "group_id": finding["group_id"], "signal_ids": finding["signal_ids"], "weight": finding["weight"]}
+                    {
+                        "finding_id": str(uuid5(analysis_uuid, finding["rule_id"])),
+                        "group_id": finding["group_id"],
+                        "signal_ids": finding["signal_ids"],
+                        "weight": finding["weight"],
+                    }
                     for finding in detection["findings"]
                 ]
                 normalized["scoring"] = detection["scoring"]
                 _persist_detection(analysis_id, normalized, detection)
                 from worker.normalize import validate_normalized
+
                 validate_normalized(normalized)
                 _write_normalized(data_root, analysis_id, normalized)
+            elif stage == "AI_ANALYSIS":
+                ai_status, ai_error_code, ai_error_message = _run_stage1_function_summaries(
+                    analysis_id
+                )
+                with new_session() as session:
+                    current = session.scalar(
+                        select(Analysis)
+                        .where(Analysis.id == analysis_uuid)
+                        .with_for_update()
+                    )
+                    if current is None or current.status == "CANCELLED":
+                        return {"id": analysis_id, "status": "CANCELLED"}
+                    current.ai_status = ai_status
+                    if ai_status != "OK":
+                        current.error_code = ai_error_code
+                        current.error_message = ai_error_message
+                    session.commit()
             else:
                 time.sleep(PLACEHOLDER_DELAY_S)
 
         with new_session() as session:
-            analysis = session.scalar(select(Analysis).where(Analysis.id == analysis_uuid).with_for_update())
+            analysis = session.scalar(
+                select(Analysis).where(Analysis.id == analysis_uuid).with_for_update()
+            )
             if analysis is None or analysis.status == "CANCELLED":
                 return {"id": analysis_id, "status": "CANCELLED"}
-            transition_analysis(analysis, "PARTIAL", 95)
             analysis.decomp_status = normalized["decomp_status"]
-            analysis.ai_status = "DISABLED"
-            analysis.error_code = "PIPELINE_STUBBED"
-            analysis.error_message = (
-                "PE x64 static metadata, fixture decompilation output, and deterministic findings were saved; AI analysis remains disabled."
-                if normalized["source"] == "fixture" else
-                "PE x64 static metadata and deterministic findings were saved; real Ghidra was unavailable and AI analysis remains disabled."
-            )
+            if analysis.ai_status != "OK":
+                transition_analysis(analysis, "PARTIAL", 95)
+                if analysis.ai_status == "DISABLED":
+                    analysis.error_code = analysis.error_code or "AI_DISABLED"
+                    analysis.error_message = (
+                        analysis.error_message
+                        or "Static findings were saved, but the pipeline AI stage is disabled or not configured."
+                    )
+                else:
+                    analysis.error_code = analysis.error_code or "AI_STAGE_DEGRADED"
+                    analysis.error_message = (
+                        analysis.error_message
+                        or "Static findings were saved, but the pipeline AI stage could not complete."
+                    )
+                if analysis.decomp_status != "OK":
+                    if normalized["decomp_status"] == "TIMEOUT":
+                        ghidra_summary = "Ghidra analysis timed out; decompilation is incomplete."
+                    elif normalized["decomp_status"] == "FAILED":
+                        ghidra_summary = "Ghidra analysis failed or is unavailable; decompilation is incomplete."
+                    elif normalized["source"] == "fixture":
+                        ghidra_summary = "Fixture decompilation output is incomplete."
+                    else:
+                        ghidra_summary = "Ghidra analysis was not run; decompilation is incomplete."
+                    analysis.error_message = f"{analysis.error_message} {ghidra_summary}"
+            elif analysis.decomp_status != "OK":
+                transition_analysis(analysis, "PARTIAL", 95)
+                if normalized["decomp_status"] == "TIMEOUT":
+                    ghidra_summary = "Ghidra analysis timed out."
+                elif normalized["decomp_status"] == "FAILED":
+                    ghidra_summary = "Ghidra analysis failed or is unavailable."
+                elif normalized["source"] == "fixture":
+                    ghidra_summary = "Fixture decompilation output was incomplete."
+                else:
+                    ghidra_summary = "Ghidra analysis was not run."
+                analysis.error_code = "DECOMP_INCOMPLETE"
+                analysis.error_message = f"The AI report and static findings were saved, but {ghidra_summary.lower()} Results are partial."
+            else:
+                transition_analysis(analysis, "COMPLETED", 100)
+                analysis.error_code = None
+                analysis.error_message = None
+            final_status = analysis.status
             session.commit()
-        return {"id": analysis_id, "status": "PARTIAL"}
+        return {"id": analysis_id, "status": final_status}
     except UnsupportedArchitecture as exc:
         _mark_failed(analysis_id, "UNSUPPORTED_ARCHITECTURE", str(exc))
         return {"id": analysis_id, "status": "FAILED"}
     except InvalidBinary:
-        _mark_failed(analysis_id, "INVALID_BINARY", "The uploaded file could not be parsed as a valid PE binary.")
+        _mark_failed(
+            analysis_id,
+            "INVALID_BINARY",
+            "The uploaded file could not be parsed as a valid PE binary.",
+        )
         return {"id": analysis_id, "status": "FAILED"}
     except NormalizationError:
-        _mark_failed(analysis_id, "INTERNAL_ERROR", "Analysis output could not be validated. Please re-upload later.")
+        _mark_failed(
+            analysis_id,
+            "INTERNAL_ERROR",
+            "Analysis output could not be validated. Please re-upload later.",
+        )
         return {"id": analysis_id, "status": "FAILED"}
     except Exception:
         logger.exception("analysis_pipeline_failed")
         try:
-            _mark_failed(analysis_id, "INTERNAL_ERROR", "Analysis could not be completed. Re-upload to try again.")
+            _mark_failed(
+                analysis_id,
+                "INTERNAL_ERROR",
+                "Analysis could not be completed. Re-upload to try again.",
+            )
         except Exception:
             logger.error("analysis_failure_state_update_failed")
         return {"id": analysis_id, "status": "FAILED"}

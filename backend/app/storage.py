@@ -21,7 +21,11 @@ def resolve_under(base: str | Path, *parts: str | os.PathLike[str]) -> Path:
         if not raw or "\x00" in raw:
             raise UnsafeStoragePath("Invalid storage path component")
         normalized = raw.replace("\\", "/")
-        if ".." in PurePosixPath(normalized).parts or PureWindowsPath(raw).is_absolute() or PurePosixPath(normalized).is_absolute():
+        if (
+            ".." in PurePosixPath(normalized).parts
+            or PureWindowsPath(raw).is_absolute()
+            or PurePosixPath(normalized).is_absolute()
+        ):
             raise UnsafeStoragePath("Path traversal is not allowed")
         candidate = candidate / raw
     resolved = candidate.resolve()
@@ -40,11 +44,15 @@ def analysis_id_component(analysis_id: str) -> str:
 
 
 def upload_file_path(data_root: str | Path, analysis_id: str) -> Path:
-    return resolve_under(Path(data_root) / "uploads", analysis_id_component(analysis_id), "original.bin")
+    return resolve_under(
+        Path(data_root) / "uploads", analysis_id_component(analysis_id), "original.bin"
+    )
 
 
 def artifact_dir_path(data_root: str | Path, analysis_id: str) -> Path:
-    return resolve_under(Path(data_root) / "artifacts", analysis_id_component(analysis_id))
+    return resolve_under(
+        Path(data_root) / "artifacts", analysis_id_component(analysis_id)
+    )
 
 
 def function_artifact_path(data_root: str | Path, analysis_id: str, fid: str) -> Path:
@@ -59,7 +67,9 @@ def function_artifact_path(data_root: str | Path, analysis_id: str, fid: str) ->
         raise UnsafeStoragePath("Invalid function id") from exc
     if owner != analysis:
         raise UnsafeStoragePath("Function does not belong to this analysis")
-    return resolve_under(artifact_dir_path(data_root, analysis), "funcs", f"{match.group(2)[2:]}.c")
+    return resolve_under(
+        artifact_dir_path(data_root, analysis), "funcs", f"{match.group(2)[2:]}.c"
+    )
 
 
 def ensure_storage_roots(data_root: str | Path) -> None:

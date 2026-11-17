@@ -13,6 +13,8 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql+psycopg://app:app-local-password@localhost:5432/analysis",
 )
+
+
 def create_engine_from_url(url: str):
     return create_engine(url, pool_pre_ping=True)
 

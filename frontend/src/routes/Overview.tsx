@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getOverview, getStatus, type OverviewView, type StatusSnapshot } from "../lib/api";
+import { generateAiExplanation, getOverview, getStatus, type AiExplanationResponse, type OverviewView, type StatusSnapshot } from "../lib/api";
 import { subscribeAnalysisEvents, type AnalysisEvent } from "../lib/sse";
 import { RiskBreakdown } from "../components/RiskBreakdown";
 import { SSEBanner } from "../components/SSEBanner";
@@ -20,11 +20,15 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
   const [lastEvent, setLastEvent] = useState<AnalysisEvent | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [aiExplanation, setAiExplanation] = useState<AiExplanationResponse | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     let active = true;
     setOverview(null); setStatus(null); setLastEvent(null); setError("");
-    getOverview(analysisId).then((data) => { if (active) setOverview(data); }).catch((e: unknown) => {
+    setAiExplanation(null); setAiBusy(false); setAiError("");
+    getOverview(analysisId).then((data) => { if (active) { setOverview(data); setAiExplanation(data.aiReport ?? null); } }).catch((e: unknown) => {
       if (active) setError(e instanceof Error ? e.message : "Could not load this analysis.");
     });
     getStatus(analysisId).then((data) => { if (active) setStatus(data); }).catch(() => undefined);
@@ -36,8 +40,16 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
     let poll = 0;
     if (!USE_FIXTURES) {
       const refresh = async () => {
-        try { const value = await getStatus(analysisId); if (active) setStatus(value); } catch { /* SSE remains the live progress channel. */ }
-        if (active && !["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(status?.status ?? "")) poll = window.setTimeout(refresh, 3000);
+        try {
+          const value = await getStatus(analysisId);
+          if (active) setStatus(value);
+          if (active && ["COMPLETED", "PARTIAL"].includes(value.status)) {
+            const latest = await getOverview(analysisId);
+            if (active) { setOverview(latest); setAiExplanation(latest.aiReport ?? null); }
+            return;
+          }
+        } catch { /* SSE remains the live progress channel. */ }
+        if (active) poll = window.setTimeout(refresh, 3000);
       };
       poll = window.setTimeout(refresh, 3000);
     }
@@ -45,6 +57,19 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
     // Reset and connect once per analysis id; status polling is deliberately separate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId]);
+
+  async function requestAiExplanation() {
+    setAiBusy(true);
+    setAiError("");
+    try {
+      const result = await generateAiExplanation(analysisId);
+      setAiExplanation(result);
+    } catch (reason: unknown) {
+      setAiError(reason instanceof Error ? reason.message : "Could not generate an AI explanation.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   if (error) return <div className="error-panel" role="alert"><h1>Overview unavailable</h1><p>{error}</p></div>;
   if (!overview || !status) return <LoadingSkeleton />;
@@ -79,6 +104,31 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
       {overview.findings.length
         ? <div className="finding-list">{overview.findings.slice(0, 5).map((finding) => <div className="finding-link" key={finding.id} role="link" tabIndex={0} onClick={() => navigate(`/analyses/${encodeURIComponent(analysisId)}/findings`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(`/analyses/${encodeURIComponent(analysisId)}/findings`); }}><FindingCard finding={finding} /></div>)}</div>
         : <div className="empty-state"><span className="empty-icon" aria-hidden="true">—</span><strong>No indicators by current rule set.</strong><span>Does not prove benign.</span></div>}
+    </section>
+
+    <section className="panel ai-explanation-panel">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">OLLAMA · PIPELINE + ON-DEMAND</div>
+          <h2>AI explanation</h2>
+          <p className="ai-help">Uses selected static metadata, rule findings, and evidence. It cannot change the deterministic score or verdict.</p>
+        </div>
+        <button className="button button-primary" type="button"
+          disabled={USE_FIXTURES || aiBusy || !["COMPLETED", "PARTIAL"].includes(live.status)}
+          onClick={() => { void requestAiExplanation(); }}>
+          {aiBusy ? "Generating…" : aiExplanation ? "Regenerate explanation" : "Explain findings"}
+        </button>
+      </div>
+      {USE_FIXTURES && <p className="ai-help">Switch to the live API build to use your configured Ollama endpoint.</p>}
+      {aiError && <p className="ai-error" role="alert">{aiError}</p>}
+      {aiBusy && <p className="ai-help" aria-live="polite">Waiting for the configured model…</p>}
+      {aiExplanation
+        ? <div className="ai-explanation-body">
+            <div className="ai-model-meta">Model: <code>{aiExplanation.model}</code> · Input SHA-256: <code>{aiExplanation.input_sha256}</code></div>
+            <div className="ai-explanation-output">{aiExplanation.explanation}</div>
+            <p className="ai-help">{aiExplanation.disclaimer}</p>
+          </div>
+        : <p className="ai-help">Generate a grounded explanation after analysis finishes. The raw uploaded binary is not sent to the model.</p>}
     </section>
 
     <section className="panel provenance-panel">

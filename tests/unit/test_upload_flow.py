@@ -44,12 +44,18 @@ def test_upload_validation_order_and_content_length_limit(monkeypatch):
         assert (empty.status_code, empty.json()["error"]["code"]) == (400, "EMPTY_FILE")
 
         bad_magic = _upload(client, b"PK\x03\x04fake zip", "looks.exe")
-        assert (bad_magic.status_code, bad_magic.json()["error"]["code"]) == (400, "UNSUPPORTED_FORMAT")
+        assert (bad_magic.status_code, bad_magic.json()["error"]["code"]) == (
+            400,
+            "UNSUPPORTED_FORMAT",
+        )
 
         monkeypatch.setattr(analyses_api, "MAX_FILE_BYTES", 16)
         monkeypatch.setattr(analyses_api, "CONTENT_LENGTH_OVERHEAD", 0)
         oversize = _upload(client, b"MZ" + b"x" * 100)
-        assert (oversize.status_code, oversize.json()["error"]["code"]) == (413, "PAYLOAD_TOO_LARGE")
+        assert (oversize.status_code, oversize.json()["error"]["code"]) == (
+            413,
+            "PAYLOAD_TOO_LARGE",
+        )
 
 
 def test_streaming_size_counter_removes_partial_file(tmp_path):
@@ -82,14 +88,22 @@ def test_fake_pe_upload_sse_duplicate_ids_and_delete_cascade():
         second_id = duplicate.json()["id"]
         assert first_id in duplicate.json()["prior_analysis_ids"]
 
-        event_response = client.get(f"/api/v1/analyses/{first_id}/events", headers={"Accept": "text/event-stream"})
+        event_response = client.get(
+            f"/api/v1/analyses/{first_id}/events",
+            headers={"Accept": "text/event-stream"},
+        )
         events = _read_events(event_response.text)
         names = [item["name"] for item in events]
         assert names[0] == "connected"
         assert "stage_change" in names
         assert "progress" in names
         assert names[-1] == "failed"
-        assert names.index("connected") < names.index("stage_change") < names.index("progress") < names.index("failed")
+        assert (
+            names.index("connected")
+            < names.index("stage_change")
+            < names.index("progress")
+            < names.index("failed")
+        )
 
         status_response = client.get(f"/api/v1/analyses/{first_id}/status")
         assert status_response.status_code == 200

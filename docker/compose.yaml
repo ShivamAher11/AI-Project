@@ -23,8 +23,8 @@ services:
 
   api:
     build:
-      context: ../backend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://app:app-local-password@postgres:5432/analysis}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -32,6 +32,14 @@ services:
       DATA_ROOT: ${DATA_ROOT:-/data}
       MAX_FILE_MB: ${MAX_FILE_MB:-100}
       TTL_HOURS: ${TTL_HOURS:-24}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5-codebase}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://studio-unmapped-vicinity.ngrok-free.dev/v1}
+      CONSENT_CLOUD_LLM: ${CONSENT_CLOUD_LLM:-false}
+      LLM_ALLOWED_HOSTS: ${LLM_ALLOWED_HOSTS:-studio-unmapped-vicinity.ngrok-free.dev,api.openai.com}
+      LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-30}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
+      PIPELINE_AI_INTERNAL_TOKEN: ${PIPELINE_AI_INTERNAL_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:
@@ -66,7 +74,11 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DATA_ROOT: ${DATA_ROOT:-/data}
       PLACEHOLDER_STAGE_DELAY_S: ${PLACEHOLDER_STAGE_DELAY_S:-0.35}
-      GHIDRA_MODE: ${GHIDRA_MODE:-fixture}
+      GHIDRA_MODE: ${GHIDRA_MODE:-real}
+      GHIDRA_TIMEOUT_SECONDS: ${GHIDRA_TIMEOUT_SECONDS:-900}
+      PIPELINE_AI_INTERNAL_TOKEN: ${PIPELINE_AI_INTERNAL_TOKEN:-}
+      PIPELINE_AI_API_URL: ${PIPELINE_AI_API_URL:-http://api:8000/api/v1/ai/internal/analyses}
+      PIPELINE_AI_REQUEST_TIMEOUT_S: ${PIPELINE_AI_REQUEST_TIMEOUT_S:-150}
     volumes:
       - uploads:/data/uploads
       - artifacts:/data/artifacts

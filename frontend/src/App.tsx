@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { OverviewPage } from "./routes/Overview";
+import { FunctionDetailPage } from "./routes/FunctionDetail";
 import { UploadPage } from "./routes/Upload";
 import { USE_FIXTURES } from "./lib/api";
 import { FindingsPage } from "./routes/Findings";
+import { FunctionsPage } from "./routes/Functions";
+import { GraphPage } from "./routes/Graph";
+import { ReportPage } from "./routes/Report";
 
 function useRouter() {
   const [path, setPath] = useState(`${window.location.pathname}${window.location.search}`);
@@ -23,7 +27,11 @@ export function App() {
   const { path, navigate } = useRouter();
   const overviewMatch = path.match(/^\/analyses\/([^/]+)\/overview(?:\?.*)?$/);
   const findingsMatch = path.match(/^\/analyses\/([^/]+)\/findings(?:\?.*)?$/);
-  const analysisId = overviewMatch?.[1] ?? findingsMatch?.[1];
+  const functionMatch = path.match(/^\/analyses\/([^/]+)\/functions\/([^/]+)(?:\?.*)?$/);
+  const functionsMatch = path.match(/^\/analyses\/([^/]+)\/functions(?:\?.*)?$/);
+  const graphMatch = path.match(/^\/analyses\/([^/]+)\/graph(?:\?.*)?$/);
+  const reportMatch = path.match(/^\/analyses\/([^/]+)\/report(?:\?.*)?$/);
+  const analysisId = overviewMatch?.[1] ?? findingsMatch?.[1] ?? functionsMatch?.[1] ?? graphMatch?.[1] ?? reportMatch?.[1] ?? functionMatch?.[1];
   return (
     <div className="app-frame">
       <header className="topbar">
@@ -33,7 +41,7 @@ export function App() {
         </a>
         <nav className="header-nav" aria-label="Primary navigation">
           <button onClick={() => navigate("/upload")}>Upload</button>
-          {analysisId && <><button onClick={() => navigate(`/analyses/${analysisId}/overview`)}>Overview</button><button onClick={() => navigate(`/analyses/${analysisId}/findings`)}>Findings</button></>}
+          {analysisId && <><button onClick={() => navigate(`/analyses/${analysisId}/overview`)}>Overview</button><button onClick={() => navigate(`/analyses/${analysisId}/findings`)}>Findings</button><button onClick={() => navigate(`/analyses/${analysisId}/functions`)}>Functions</button><button onClick={() => navigate(`/analyses/${analysisId}/graph`)}>Call Graph</button><button onClick={() => navigate(`/analyses/${analysisId}/report`)}>Report</button></>}
         </nav>
         <div className="topbar-right">
           {USE_FIXTURES && <span className="mode-pill">Fixture mode</span>}
@@ -51,13 +59,17 @@ export function App() {
             <span className="nav-icon" aria-hidden="true">◫</span> Overview
           </button><button className={`nav-item ${findingsMatch ? "active" : ""}`} onClick={() => navigate(`/analyses/${analysisId}/findings`)}>
             <span className="nav-icon" aria-hidden="true">≡</span> Findings
-          </button></> : <p className="sidebar-hint">Upload a file to start a static review.</p>}
+          </button><button className={`nav-item ${functionsMatch ? "active" : ""}`} onClick={() => navigate(`/analyses/${analysisId}/functions`)}>ƒ&nbsp; Functions</button><button className={`nav-item ${graphMatch ? "active" : ""}`} onClick={() => navigate(`/analyses/${analysisId}/graph`)}>◎&nbsp; Call Graph</button><button className={`nav-item ${reportMatch ? "active" : ""}`} onClick={() => navigate(`/analyses/${analysisId}/report`)}>▤&nbsp; Report</button></> : <p className="sidebar-hint">Upload a file to start a static review.</p>}
           <div className="sidebar-footer">Static analysis only<br />No files are executed.</div>
         </aside>
         <main className="main-pane">
-          {overviewMatch
+          {reportMatch ? <ReportPage analysisId={decodeURIComponent(reportMatch[1])} />
+            : graphMatch ? <GraphPage analysisId={decodeURIComponent(graphMatch[1])} />
+            : functionsMatch ? <FunctionsPage analysisId={decodeURIComponent(functionsMatch[1])} navigate={navigate} />
+            : overviewMatch
             ? <OverviewPage analysisId={decodeURIComponent(overviewMatch[1])} navigate={navigate} />
             : findingsMatch ? <FindingsPage analysisId={decodeURIComponent(findingsMatch[1])} />
+            : functionMatch ? <FunctionDetailPage analysisId={decodeURIComponent(functionMatch[1])} fid={decodeURIComponent(functionMatch[2])} navigate={navigate} />
             : <UploadPage navigate={navigate} />}
         </main>
       </div>

@@ -49,13 +49,134 @@ export interface OverviewView {
   counts: { sections: number; imports: number; strings: number; functions: number; findings: number };
   risk: { score: number; rating: Severity; breakdown: RiskLine[] };
   findings: FindingView[];
+  aiReport: AiExplanationResponse | null;
   versions: { scoring: string; rules: string; schema: string };
 }
+
+export interface AiSummaryView {
+  schema_version: string;
+  function_id: string;
+  purpose: string;
+  behavior: string[];
+  evidence_ids: string[];
+  suspicious_indicators: string[];
+  uncertainty: string;
+  alternative_explanation: string;
+  suggested_technique_id: string | null;
+  rationale: string;
+}
+
+export interface FunctionDetailView {
+  id: string;
+  address: string;
+  name: string;
+  centrality: number;
+  decompiler_status: string;
+  decompiled_excerpt: string | null;
+  artifact_available: boolean;
+  ai_summary: AiSummaryView | null;
+  decompiled_full: string | null;
+  artifact_truncated: boolean | null;
+  signature?: string | null;
+  size?: number | null;
+  assembly_excerpt?: string | null;
+}
+
+export interface FunctionView {
+  id: string;
+  address: string;
+  name: string;
+  centrality: number;
+  decompilerStatus: string;
+  decompiledExcerpt: string | null;
+  artifactAvailable: boolean;
+}
+
+export interface CallEdgeView { caller: string; callee: string; type: string }
+export interface StaticGraphView { functions: FunctionView[]; edges: CallEdgeView[] }
+
+function mapFunction(item: any): FunctionView {
+  return {
+    id: item.id,
+    address: item.address,
+    name: item.name ?? "Unnamed function",
+    centrality: item.centrality ?? 0,
+    decompilerStatus: item.decompiler_status ?? "NOT_RUN",
+    decompiledExcerpt: item.decompiled_excerpt ?? null,
+    artifactAvailable: item.artifact_available ?? Boolean(item.artifact),
+  };
+}
+
+export async function getFunctions(analysisId: string): Promise<FunctionView[]> {
+  if (USE_FIXTURES) return fixtureFor(analysisId).functions.map(mapFunction);
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(analysisId)}/functions`);
+  if (!response.ok) throw new Error("Could not load functions.");
+  const data = await response.json();
+  return (data.items ?? []).map(mapFunction);
+}
+
+export async function getStaticGraph(analysisId: string): Promise<StaticGraphView> {
+  if (USE_FIXTURES) return { functions: fixtureFor(analysisId).functions.map(mapFunction), edges: [] };
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(analysisId)}/static`);
+  if (!response.ok) throw new Error("Could not load static graph data.");
+  const data = await response.json();
+  return {
+    functions: (data.functions ?? []).map(mapFunction),
+    edges: (data.edges ?? []).map((edge: any) => ({ caller: edge.caller, callee: edge.callee, type: edge.type ?? "call" })),
+  };
+}
+
+type FuncRow = { id: string; address: string; name: string; centrality: number; decompiler_status: string; decompiled_excerpt: string | null };
+
+function findFuncById(data: unknown, fid: string): FuncRow | null {
+  const normalized = data as { functions: unknown[] };
+  const row = normalized.functions.find((f) => {
+    const fr = f as { id: string };
+    return fr.id === fid;
+  });
+  if (!row) return null;
+  return {
+    id: (row as { id: string }).id,
+    address: (row as { address: string }).address,
+    name: (row as { name: string }).name,
+    centrality: Number((row as { centrality: number }).centrality),
+    decompiler_status: String((row as { decompiler_status: string }).decompiler_status),
+    decompiled_excerpt: (row as { decompiled_excerpt: string | null }).decompiled_excerpt ?? null,
+  };
+}
+
+export async function getFunctionDetail(id: string, fid: string, load_full = false): Promise<FunctionDetailView> {
+  if (USE_FIXTURES) {
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 120);
+    });
+    const data = fixtureFor(id);
+    const row = findFuncById(data, fid);
+    if (!row) throw new Error("Function not found.");
+    return {
+      id: row.id,
+      address: row.address,
+      name: row.name,
+      centrality: row.centrality,
+      decompiler_status: row.decompiler_status,
+      decompiled_excerpt: row.decompiled_excerpt,
+      artifact_available: false,
+      ai_summary: null,
+      decompiled_full: null,
+      artifact_truncated: null,
+    };
+  }
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/functions/${encodeURIComponent(fid)}${load_full ? "?load_full=true" : ""}`);
+  if (!response.ok) throw new Error("Could not load function detail.");
+  return response.json() as Promise<FunctionDetailView>;
+}
+
+export function fixtureId(state: "full" | "partial"): string { return `fixture-${state}`; }
 
 type NormalizedFixture = typeof fullFixture;
 
 const fixtureFor = (id: string): NormalizedFixture => id.toLowerCase().includes("partial")
-      ? partialFixture as NormalizedFixture
+  ? partialFixture as NormalizedFixture
   : fullFixture as NormalizedFixture;
 
 function ratingFor(score: number): Severity {
@@ -86,7 +207,7 @@ function fixtureOverview(id: string): OverviewView {
         : "Registry imports and a CurrentVersion\\Run key string occur in the static input.",
       interpretation: "Behaviorally suspicious pattern; this heuristic is not a verdict.",
       alternative: "These APIs can also appear in debugging, administration, or installer code.",
-      attackMappings: groupId === "G_INJECTION" ? [{ techniqueId: "T1055", name: "Process Injection", label: "Likely" as const }] : groupId === "G_REG_PERSIST" ? [{ techniqueId: "T1547.001", name: "Registry Run", label: "Likely" as const }] : [],
+      attackMappings: groupId === "G_INJECTION" ? [{ techniqueId: "T1055", name: "Process Injection", label: "Likely" }] : groupId === "G_REG_PERSIST" ? [{ techniqueId: "T1547.001", name: "Registry Run", label: "Likely" }] : [],
       evidence: (hit?.evidence_refs ?? []).map((ref, index) => ({ id: `E${index + 1}`, sourceType: ref.split(":")[0] ?? "rule", sourceId: ref, excerpt: ref, offsetOrAddress: null, reason: "Matched by the current rule set." })),
     };
   });
@@ -118,11 +239,10 @@ function fixtureOverview(id: string): OverviewView {
     counts: { sections: data.sections.length, imports: data.imports.length, strings: data.strings.length, functions: data.functions.length, findings: findings.length },
     risk: { score, rating: ratingFor(score), breakdown },
     findings,
+    aiReport: null,
     versions: { scoring: String(data.versions.scoring), rules: String(data.versions.rules), schema: "1.0" },
   };
 }
-
-export function fixtureId(state: "full" | "partial"): string { return `fixture-${state}`; }
 
 export function fileAdvisories(file: File): string[] {
   const notes: string[] = [];
@@ -154,7 +274,9 @@ export async function uploadFile(file: File): Promise<{ id: string; status: JobS
 
 export async function getOverview(id: string): Promise<OverviewView> {
   if (USE_FIXTURES) {
-    await new Promise((resolve) => window.setTimeout(resolve, 180));
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 180);
+    });
     return fixtureOverview(id);
   }
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/overview`);
@@ -168,6 +290,7 @@ export async function getOverview(id: string): Promise<OverviewView> {
     counts: data.counts,
     risk: { score: data.risk.score ?? 0, rating: (data.risk.rating ? String(data.risk.rating).slice(0, 1).toUpperCase() + String(data.risk.rating).slice(1).toLowerCase() : ratingFor(data.risk.score ?? 0)) as Severity, breakdown: (data.risk.breakdown ?? []).map((line: { title: string; weight: number }) => ({ title: line.title, weight: line.weight })) },
     findings: (data.top_findings ?? []).map(mapFinding),
+    aiReport: data.ai_report && typeof data.ai_report === "object" ? data.ai_report as AiExplanationResponse : null,
     versions: data.versions,
   };
 }
@@ -180,17 +303,30 @@ export async function getFindings(id: string): Promise<FindingView[]> {
   return (data.items ?? []).map(mapFinding);
 }
 
-function mapFinding(finding: any): FindingView {
-  return { id: finding.id, groupId: finding.group_id ?? finding.type ?? "RULE", title: finding.title,
-    severity: (String(finding.severity).slice(0, 1).toUpperCase() + String(finding.severity).slice(1).toLowerCase()) as Severity,
-    confidence: ({ low: "LOW", medium: "MED", high: "HIGH" } as Record<string, Confidence>)[String(finding.confidence).toLowerCase()] ?? "LOW",
-    weight: finding.score_contribution ?? finding.weight ?? 0, observed: finding.description,
-    interpretation: finding.interpretation ?? "Behaviorally suspicious pattern; heuristic, not a verdict.",
-    alternative: finding.alternative_explanation ?? finding.alternative ?? "There may be a benign explanation.",
-    attackMappings: (finding.attack_mappings ?? []).map((item: any) => ({ techniqueId: item.technique_id, name: item.name, label: item.label })),
-    evidence: (finding.evidence ?? []).map((item: any, index: number) => typeof item === "string"
-      ? ({ id: `E${index + 1}`, sourceType: item.split(":")[0] ?? "rule", sourceId: item, excerpt: item, offsetOrAddress: null, reason: "Matched by the current rule set." })
-      : ({ id: item.id, sourceType: item.source_type, sourceId: item.source_id, excerpt: item.excerpt, offsetOrAddress: item.offset_or_address, reason: item.reason ?? "Evidence supporting this finding." })) };
+function mapFinding(finding: unknown): FindingView {
+  const f = finding as Record<string, unknown>;
+  return {
+    id: String(f.id ?? ""),
+    groupId: String(f.group_id ?? f.type ?? "RULE"),
+    title: String(f.title ?? ""),
+    severity: (String(f.severity).slice(0, 1).toUpperCase() + String(f.severity).slice(1).toLowerCase()) as Severity,
+    confidence: ({ low: "LOW", medium: "MED", high: "HIGH" } as Record<string, Confidence>)[String(f.confidence).toLowerCase()] ?? "LOW",
+    weight: Number(f.score_contribution ?? f.weight ?? 0) || 0,
+    observed: String(f.description ?? ""),
+    interpretation: String(f.interpretation ?? "Behaviorally suspicious pattern; heuristic, not a verdict."),
+    alternative: String(f.alternative_explanation ?? f.alternative ?? "There may be a benign explanation."),
+    attackMappings: (Array.isArray(f.attack_mappings) ? f.attack_mappings : []).map((item: unknown) => {
+      const m = item as Record<string, unknown>;
+      return { techniqueId: String(m.technique_id ?? ""), name: String(m.name ?? ""), label: String(m.label ?? "Possible") as "Likely" | "Possible" };
+    }),
+    evidence: (Array.isArray(f.evidence) ? f.evidence : []).map((item: unknown, index: number) => {
+      if (typeof item === "string") {
+        return { id: `E${index + 1}`, sourceType: item.split(":")[0] ?? "rule", sourceId: item, excerpt: item, offsetOrAddress: null, reason: "Matched by the current rule set." };
+      }
+      const e = item as Record<string, unknown>;
+      return { id: String(e.id ?? `E${index + 1}`), sourceType: String(e.source_type ?? ""), sourceId: String(e.source_id ?? ""), excerpt: String(e.excerpt ?? ""), offsetOrAddress: e.offset_or_address === null || e.offset_or_address === undefined ? null : String(e.offset_or_address), reason: String(e.reason ?? "Evidence supporting this finding.") };
+    }),
+  };
 }
 
 export async function getStatus(id: string): Promise<StatusSnapshot> {
@@ -202,4 +338,24 @@ export async function getStatus(id: string): Promise<StatusSnapshot> {
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/status`);
   if (!response.ok) throw new Error("Could not read analysis status.");
   return response.json() as Promise<StatusSnapshot>;
+}
+
+export interface AiExplanationResponse {
+  analysis_id: string;
+  model: string;
+  generated_at: string;
+  input_sha256: string;
+  explanation: string;
+  disclaimer: string;
+}
+
+export async function generateAiExplanation(id: string): Promise<AiExplanationResponse> {
+  if (USE_FIXTURES) throw new Error("On-demand AI explanations require the live API, not fixture mode.");
+  const response = await fetch(`${API_BASE}/ai/analyses/${encodeURIComponent(id)}/explanation`, { method: "POST" });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = data?.error?.message ?? data?.detail?.message ?? "AI explanation request failed.";
+    throw new Error(detail);
+  }
+  return data as AiExplanationResponse;
 }

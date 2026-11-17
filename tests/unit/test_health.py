@@ -21,8 +21,14 @@ def test_cors_preflight_matches_spec_allowlist():
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
-    assert {method.strip() for method in response.headers["access-control-allow-methods"].split(",")} == {"GET", "POST", "DELETE", "OPTIONS"}
-    assert {header.strip().lower() for header in response.headers["access-control-allow-headers"].split(",")} == {"content-type", "accept", "last-event-id"}
+    assert {
+        method.strip()
+        for method in response.headers["access-control-allow-methods"].split(",")
+    } == {"GET", "POST", "DELETE", "OPTIONS"}
+    assert {
+        header.strip().lower()
+        for header in response.headers["access-control-allow-headers"].split(",")
+    } == {"content-type", "accept", "last-event-id"}
     assert "access-control-allow-credentials" not in response.headers
 
 
