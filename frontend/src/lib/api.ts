@@ -3,7 +3,6 @@ import partialFixture from "../../../fixtures/analysis-partial.json";
 
 const viteEnv = import.meta.env ?? {};
 export const API_BASE = viteEnv.VITE_API_URL ?? "http://localhost:8000/api/v1";
-// Fixture mode remains available for local demos; Docker builds default to the real API.
 export const USE_FIXTURES = viteEnv.VITE_USE_FIXTURES !== "false";
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
@@ -37,6 +36,33 @@ export interface FindingView {
 
 export interface RiskLine { title: string; weight: number }
 
+export interface AiAssessmentView {
+  schema_version: string;
+  verdict: "LIKELY_MALICIOUS" | "LIKELY_BENIGN" | "INCONCLUSIVE";
+  summary: string;
+  evidence_ids: string[];
+  rationale: string;
+  uncertainty: string;
+  limitations: string[];
+  disclaimer: string;
+  generated_at: string;
+  model: string;
+  input_sha256: string;
+  stages?: { func?: string; correlate?: string; report?: string };
+  tokens_used?: number;
+  tool_calls?: number;
+  correlation?: {
+    behavior_findings?: Array<{
+      title: string;
+      description: string;
+      evidence_ids: string[];
+      affected_function_ids: string[];
+    }>;
+    uncertainty?: string;
+    rationale?: string;
+  } | null;
+}
+
 export interface OverviewView {
   id: string;
   status: JobStatus;
@@ -49,7 +75,7 @@ export interface OverviewView {
   counts: { sections: number; imports: number; strings: number; functions: number; findings: number };
   risk: { score: number; rating: Severity; breakdown: RiskLine[] };
   findings: FindingView[];
-  aiReport: AiExplanationResponse | null;
+  aiReport: AiAssessmentView | null;
   versions: { scoring: string; rules: string; schema: string };
 }
 
@@ -91,84 +117,88 @@ export interface FunctionView {
   decompiledExcerpt: string | null;
   artifactAvailable: boolean;
 }
-
 export interface CallEdgeView { caller: string; callee: string; type: string }
 export interface StaticGraphView { functions: FunctionView[]; edges: CallEdgeView[] }
 
-function mapFunction(item: any): FunctionView {
+function mapFunction(item: Record<string, unknown>): FunctionView {
   return {
-    id: item.id,
-    address: item.address,
-    name: item.name ?? "Unnamed function",
-    centrality: item.centrality ?? 0,
-    decompilerStatus: item.decompiler_status ?? "NOT_RUN",
-    decompiledExcerpt: item.decompiled_excerpt ?? null,
-    artifactAvailable: item.artifact_available ?? Boolean(item.artifact),
+    id: String(item.id ?? ""),
+    address: String(item.address ?? ""),
+    name: String(item.name ?? "Unnamed function"),
+    centrality: Number(item.centrality ?? 0),
+    decompilerStatus: String(item.decompilerStatus ?? item.decompiler_status ?? "NOT_RUN"),
+    decompiledExcerpt: (item.decompiledExcerpt ?? item.decompiled_excerpt ?? null) as string | null,
+    artifactAvailable: Boolean(item.artifactAvailable ?? item.artifact_available),
   };
 }
 
 export async function getFunctions(analysisId: string): Promise<FunctionView[]> {
-  if (USE_FIXTURES) return fixtureFor(analysisId).functions.map(mapFunction);
+  if (USE_FIXTURES) return fixtureFor(analysisId).functions.map((item) => mapFunction(item as Record<string, unknown>));
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(analysisId)}/functions`);
   if (!response.ok) throw new Error("Could not load functions.");
-  const data = await response.json();
-  return (data.items ?? []).map(mapFunction);
+  const data = await response.json() as { items: Record<string, unknown>[] };
+  return data.items.map(mapFunction);
 }
 
 export async function getStaticGraph(analysisId: string): Promise<StaticGraphView> {
-  if (USE_FIXTURES) return { functions: fixtureFor(analysisId).functions.map(mapFunction), edges: [] };
+  if (USE_FIXTURES) {
+    const fixture = fixtureFor(analysisId);
+    return { functions: fixture.functions.map((item) => mapFunction(item as Record<string, unknown>)), edges: fixture.edges };
+  }
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(analysisId)}/static`);
-  if (!response.ok) throw new Error("Could not load static graph data.");
-  const data = await response.json();
+  if (!response.ok) throw new Error("Could not load graph.");
+  const data = await response.json() as { functions?: Record<string, unknown>[]; edges?: CallEdgeView[] };
   return {
     functions: (data.functions ?? []).map(mapFunction),
-    edges: (data.edges ?? []).map((edge: any) => ({ caller: edge.caller, callee: edge.callee, type: edge.type ?? "call" })),
+    edges: data.edges ?? [],
   };
 }
 
-type FuncRow = { id: string; address: string; name: string; centrality: number; decompiler_status: string; decompiled_excerpt: string | null };
+type FuncRow = { id: string; address: string; name: string; centrality: number; decompiler_status: string; decompiled_excerpt: string | null; signature: string | null; artifact: Record<string, unknown> | null; size: number | null; assembly_excerpt: string | null };
 
 function findFuncById(data: unknown, fid: string): FuncRow | null {
-  const normalized = data as { functions: unknown[] };
-  const row = normalized.functions.find((f) => {
-    const fr = f as { id: string };
-    return fr.id === fid;
-  });
-  if (!row) return null;
-  return {
-    id: (row as { id: string }).id,
-    address: (row as { address: string }).address,
-    name: (row as { name: string }).name,
-    centrality: Number((row as { centrality: number }).centrality),
-    decompiler_status: String((row as { decompiler_status: string }).decompiler_status),
-    decompiled_excerpt: (row as { decompiled_excerpt: string | null }).decompiled_excerpt ?? null,
-  };
+  const normalized = data as { functions?: FuncRow[] };
+  return (normalized.functions ?? []).find((f) => f.id === fid) ?? null;
 }
 
 export async function getFunctionDetail(id: string, fid: string, load_full = false): Promise<FunctionDetailView> {
   if (USE_FIXTURES) {
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 120);
-    });
-    const data = fixtureFor(id);
-    const row = findFuncById(data, fid);
-    if (!row) throw new Error("Function not found.");
+    const fixture = fixtureFor(id);
+    const func = findFuncById(fixture, fid);
+    if (!func) throw new Error("Function not found.");
     return {
-      id: row.id,
-      address: row.address,
-      name: row.name,
-      centrality: row.centrality,
-      decompiler_status: row.decompiler_status,
-      decompiled_excerpt: row.decompiled_excerpt,
-      artifact_available: false,
+      id: func.id,
+      address: func.address,
+      name: func.name,
+      centrality: func.centrality,
+      decompiler_status: func.decompiler_status,
+      decompiled_excerpt: func.decompiled_excerpt,
+      artifact_available: Boolean(func.artifact),
       ai_summary: null,
       decompiled_full: null,
       artifact_truncated: null,
+      signature: func.signature ?? null,
+      size: func.size ?? null,
+      assembly_excerpt: func.assembly_excerpt ?? null,
     };
   }
-  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/functions/${encodeURIComponent(fid)}${load_full ? "?load_full=true" : ""}`);
+  const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/functions/${encodeURIComponent(fid)}?load_full=${load_full}`);
   if (!response.ok) throw new Error("Could not load function detail.");
-  return response.json() as Promise<FunctionDetailView>;
+  return response.json() as unknown as FunctionDetailView;
+}
+
+export async function requestFunctionSummary(id: string, fid: string): Promise<AiSummaryView> {
+  if (USE_FIXTURES) throw new Error("Function AI summaries require the live API.");
+  const response = await fetch(
+    `${API_BASE}/ai/analyses/${encodeURIComponent(id)}/functions/${encodeURIComponent(fid)}/summary`,
+    { method: "POST" },
+  );
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = data?.error?.message ?? data?.detail?.message ?? "Could not summarize this function.";
+    throw new Error(detail);
+  }
+  return data.summary as AiSummaryView;
 }
 
 export function fixtureId(state: "full" | "partial"): string { return `fixture-${state}`; }
@@ -187,119 +217,140 @@ function ratingFor(score: number): Severity {
 }
 
 function fixtureOverview(id: string): OverviewView {
-  const data = fixtureFor(id);
-  const hitByGroup = new Map(data.rule_hits.map((hit) => [hit.rule_id, hit]));
-  const findings: FindingView[] = data.findings.slice(0, 5).map((finding) => {
-    const groupId = finding.group_id ?? "STATIC_INDICATOR";
-    const hit = hitByGroup.get(groupId);
-    const weight = hit?.weight ?? finding.weight;
-    const title = groupId === "G_INJECTION" ? "Process injection pattern" :
-      groupId === "G_REG_PERSIST" ? "Run key persistence pattern" : groupId.replace(/_/g, " ");
-    return {
-      id: finding.finding_id,
-      groupId,
-      title,
-      severity: groupId === "G_INJECTION" ? "High" : weight >= 20 ? "High" : weight >= 10 ? "Medium" : "Low",
-      confidence: "MED",
-      weight,
-      observed: groupId === "G_INJECTION"
-        ? "A single function references OpenProcess, VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread."
-        : "Registry imports and a CurrentVersion\\Run key string occur in the static input.",
-      interpretation: "Behaviorally suspicious pattern; this heuristic is not a verdict.",
-      alternative: "These APIs can also appear in debugging, administration, or installer code.",
-      attackMappings: groupId === "G_INJECTION" ? [{ techniqueId: "T1055", name: "Process Injection", label: "Likely" }] : groupId === "G_REG_PERSIST" ? [{ techniqueId: "T1547.001", name: "Registry Run", label: "Likely" }] : [],
-      evidence: (hit?.evidence_refs ?? []).map((ref, index) => ({ id: `E${index + 1}`, sourceType: ref.split(":")[0] ?? "rule", sourceId: ref, excerpt: ref, offsetOrAddress: null, reason: "Matched by the current rule set." })),
-    };
-  });
-  const breakdown = data.rule_hits.filter((hit) => !hit.absorbed).map((hit) => ({
-    title: hit.rule_id,
-    weight: Math.max(0, hit.weight),
-  }));
-  const score = Math.min(100, breakdown.reduce((sum, row) => sum + row.weight, 0));
-  const partial = data.status === "PARTIAL";
+  const fixture = fixtureFor(id);
+  const score = 40;
   return {
-    id,
-    status: data.status as JobStatus,
-    stage: data.status,
-    progress: data.status === "COMPLETED" ? 100 : partial ? 95 : 0,
-    decompStatus: data.decomp_status as OverviewView["decompStatus"],
-    aiStatus: partial ? "DISABLED" : "OK",
-    source: "fixture",
+    id: fixtureId(id.toLowerCase().includes("partial") ? "partial" : "full"),
+    status: fixture.status as JobStatus,
+    stage: fixture.status as JobStatus,
+    progress: fixture.status === "COMPLETED" ? 100 : 95,
+    decompStatus: fixture.decomp_status as StatusSnapshot["decomp_status"],
+    aiStatus: (fixture as NormalizedFixture & { ai_status?: StatusSnapshot["ai_status"] }).ai_status ?? "DISABLED",
+    source: (fixture.source ?? "fixture") as OverviewView["source"],
     file: {
-      name: data.file.original_filename,
-      size: data.file.size,
-      format: data.file.format.toUpperCase(),
-      arch: data.file.arch,
-      bitness: data.file.bitness,
-      entry: data.file.entry_point,
-      sha256: data.sha256,
-      md5: data.md5,
-      extensionMismatch: data.file.extension_mismatch,
+      name: fixture.file.original_filename,
+      size: fixture.file.size,
+      format: fixture.file.format,
+      arch: fixture.file.arch,
+      bitness: fixture.file.bitness,
+      entry: fixture.file.entry_point,
+      sha256: fixture.sha256,
+      md5: fixture.md5,
+      extensionMismatch: fixture.file.extension_mismatch,
     },
-    counts: { sections: data.sections.length, imports: data.imports.length, strings: data.strings.length, functions: data.functions.length, findings: findings.length },
-    risk: { score, rating: ratingFor(score), breakdown },
-    findings,
+    counts: {
+      sections: fixture.sections.length,
+      imports: fixture.imports.length,
+      strings: fixture.strings.length,
+      functions: fixture.functions.length,
+      findings: fixture.findings.length,
+    },
+    risk: { score, rating: ratingFor(score), breakdown: [] },
+    findings: fixture.findings.map((f: Record<string, unknown>) => ({
+      id: String(f.finding_id ?? ""),
+      groupId: String(f.group_id ?? "RULE"),
+      title: String(f.group_id ?? "Rule-based finding"),
+      severity: "Medium",
+      confidence: "MED",
+      weight: Number(f.weight ?? 0),
+      observed: `Rule ${String(f.group_id)} matched with weight ${Number(f.weight ?? 0)}.`,
+      interpretation: "Behaviorally suspicious pattern; heuristic, not a verdict.",
+      alternative: "There may be a benign explanation.",
+      attackMappings: [],
+      evidence: [],
+    })),
     aiReport: null,
-    versions: { scoring: String(data.versions.scoring), rules: String(data.versions.rules), schema: "1.0" },
+    versions: { scoring: fixture.versions.scoring, rules: fixture.versions.rules, schema: fixture.versions.prompts },
   };
 }
 
 export function fileAdvisories(file: File): string[] {
-  const notes: string[] = [];
-  if (file.size > MAX_FILE_BYTES) notes.push("This file is over the 100 MB limit and will be rejected by the API.");
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  if (extension && !["exe", "dll"].includes(extension)) notes.push("The extension is unusual for the current PE x64 pipeline; file magic is authoritative.");
-  if (file.size === 0) notes.push("This file is empty and the API will reject it.");
-  return notes;
+  const advisories: string[] = [];
+  if (file.size === 0) advisories.push("File is empty.");
+  if (file.size > MAX_FILE_BYTES) advisories.push(`File exceeds ${MAX_FILE_BYTES / (1024 * 1024)} MB limit.`);
+  return advisories;
 }
 
 export async function uploadFile(file: File): Promise<{ id: string; status: JobStatus }> {
   if (USE_FIXTURES) {
-    const state = /partial|timeout/i.test(file.name) ? "partial" : "full";
-    return { id: fixtureId(state), status: state === "full" ? "COMPLETED" : "PARTIAL" };
+    return { id: fixtureId("full"), status: "COMPLETED" };
   }
-  const body = new FormData();
-  body.append("file", file);
-  const response = await fetch(`${API_BASE}/analyses`, { method: "POST", body });
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_BASE}/analyses`, { method: "POST", body: formData });
   if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    const code = error?.error?.code;
-    if (response.status === 413 || code === "PAYLOAD_TOO_LARGE") throw new Error("File too large. Maximum upload size is 100 MB.");
-    if (response.status === 400 && code === "EMPTY_FILE") throw new Error("The selected file is empty.");
-    if (response.status === 400 && code === "UNSUPPORTED_FORMAT") throw new Error("Unsupported format. Upload a PE or ELF binary; scripts, ZIP, and PDF files are not accepted.");
-    throw new Error(error?.error?.message ?? "Upload failed. Please try again.");
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error?.message ?? "Upload failed.");
   }
-  return response.json() as Promise<{ id: string; status: JobStatus }>;
+  const data = await response.json();
+  return { id: data.id, status: data.status as JobStatus };
+}
+
+function mapOverview(data: unknown, fallbackId = ""): OverviewView {
+  const d = data as Record<string, unknown>;
+  const file = d.file as Record<string, unknown> | undefined;
+  const hashes = d.hashes as Record<string, unknown> | undefined;
+  const risk = d.risk as Record<string, unknown> | undefined;
+  const counts = d.counts as Record<string, unknown> | undefined;
+  const versions = d.versions as Record<string, unknown> | undefined;
+  const states = d.states as Record<string, unknown> | undefined;
+  return {
+    id: String(d.analysis_id ?? d.id ?? fallbackId),
+    status: (states?.status ?? d.status ?? "CREATED") as JobStatus,
+    stage: String(states?.stage ?? d.stage ?? ""),
+    progress: Number(states?.progress ?? d.progress ?? 0),
+    decompStatus: (states?.decomp_status ?? d.decomp_status ?? "NOT_RUN") as StatusSnapshot["decomp_status"],
+    aiStatus: (states?.ai_status ?? d.ai_status ?? "NOT_RUN") as StatusSnapshot["ai_status"],
+    source: (String(states?.source ?? d.source ?? "none") as OverviewView["source"]),
+    file: {
+      name: String(file?.filename ?? file?.name ?? ""),
+      size: Number(file?.size ?? 0),
+      format: String(file?.format ?? ""),
+      arch: String(file?.arch ?? ""),
+      bitness: file?.bitness === null || file?.bitness === undefined ? null : Number(file.bitness),
+      entry: String(file?.entry_point ?? file?.entry ?? ""),
+      sha256: String(hashes?.sha256 ?? ""),
+      md5: String(hashes?.md5 ?? ""),
+      extensionMismatch: Boolean(file?.extension_mismatch ?? file?.extensionMismatch ?? false),
+    },
+    counts: {
+      sections: Number(counts?.sections ?? 0),
+      imports: Number(counts?.imports ?? 0),
+      strings: Number(counts?.strings ?? 0),
+      functions: Number(counts?.functions ?? 0),
+      findings: Number(counts?.findings ?? 0),
+    },
+    risk: {
+      score: Number(risk?.score ?? 0),
+      rating: ratingFor(Number(risk?.score ?? 0)),
+      breakdown: (Array.isArray(risk?.breakdown) ? risk.breakdown : []).map((item: unknown) => {
+        const r = item as Record<string, unknown>;
+        return { title: String(r.title ?? ""), weight: Number(r.weight ?? 0) };
+      }),
+    },
+    findings: (Array.isArray(d.top_findings ?? d.findings ?? []) ? ((d.top_findings ?? d.findings ?? []) as unknown[]) : []).map((item: unknown) => mapFinding(item)),
+    aiReport: (d.ai_report ?? d.aiReport ?? null) as AiAssessmentView | null,
+    versions: {
+      scoring: String(versions?.scoring ?? ""),
+      rules: String(versions?.rules ?? ""),
+      schema: String(versions?.schema ?? ""),
+    },
+  };
 }
 
 export async function getOverview(id: string): Promise<OverviewView> {
-  if (USE_FIXTURES) {
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 180);
-    });
-    return fixtureOverview(id);
-  }
+  if (USE_FIXTURES) return fixtureOverview(id);
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/overview`);
-  if (!response.ok) throw new Error("Could not load this analysis.");
+  if (!response.ok) throw new Error("Could not load analysis overview.");
   const data = await response.json();
-  return {
-    id, status: data.states.status, stage: data.states.status, progress: ["COMPLETED", "PARTIAL"].includes(data.states.status) ? 100 : 0,
-    decompStatus: data.states.decomp_status, aiStatus: data.states.ai_status,
-    source: data.states.source,
-    file: { name: data.file.filename, size: data.file.size, format: data.file.format?.toUpperCase() ?? "UNKNOWN", arch: data.file.arch, bitness: null, entry: data.file.entry_point, sha256: data.hashes.sha256, md5: data.hashes.md5, extensionMismatch: false },
-    counts: data.counts,
-    risk: { score: data.risk.score ?? 0, rating: (data.risk.rating ? String(data.risk.rating).slice(0, 1).toUpperCase() + String(data.risk.rating).slice(1).toLowerCase() : ratingFor(data.risk.score ?? 0)) as Severity, breakdown: (data.risk.breakdown ?? []).map((line: { title: string; weight: number }) => ({ title: line.title, weight: line.weight })) },
-    findings: (data.top_findings ?? []).map(mapFinding),
-    aiReport: data.ai_report && typeof data.ai_report === "object" ? data.ai_report as AiExplanationResponse : null,
-    versions: data.versions,
-  };
+  return mapOverview(data, id);
 }
 
 export async function getFindings(id: string): Promise<FindingView[]> {
   if (USE_FIXTURES) return fixtureOverview(id).findings;
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/findings`);
   if (!response.ok) throw new Error("Could not load findings.");
-  const data = await response.json();
+  const data = await response.json() as { items: FindingView[] };
   return (data.items ?? []).map(mapFinding);
 }
 
@@ -337,7 +388,7 @@ export async function getStatus(id: string): Promise<StatusSnapshot> {
   }
   const response = await fetch(`${API_BASE}/analyses/${encodeURIComponent(id)}/status`);
   if (!response.ok) throw new Error("Could not read analysis status.");
-  return response.json() as Promise<StatusSnapshot>;
+  return response.json() as unknown as StatusSnapshot;
 }
 
 export interface AiExplanationResponse {

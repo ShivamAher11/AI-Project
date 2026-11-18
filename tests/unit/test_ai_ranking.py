@@ -50,9 +50,7 @@ def test_ranking_rule_hits_boost():
         _func("a", "0x140001000", size=10, centrality=0.0),
         _func("b", "0x140001100", size=10, centrality=0.0),
     ]
-    hits = [
-        {"rule_id": "R1", "function_ids": [f"{FUNC_ID}:0x140001100"], "weight": 5}
-    ]
+    hits = [{"rule_id": "R1", "function_ids": [f"{FUNC_ID}:0x140001100"], "weight": 5}]
     result = select_functions(
         functions, signal_counts={f"{FUNC_ID}:0x140001100": 1}, entry_point=None, k=2
     )
@@ -86,6 +84,8 @@ def test_context_is_bounded_and_drops_asm_first():
     norm = _normalized(functions)
     norm["functions"][0]["decompiled_excerpt"] = "x" * 20000
     norm["functions"][0]["assembly_excerpt"] = "asm" * 5000
-    ctx = build_function_context(norm, f"{FUNC_ID}:0x140001000", analysis_id="x", input_hash="h")
+    ctx = build_function_context(
+        norm, f"{FUNC_ID}:0x140001000", analysis_id="x", input_hash="h"
+    )
     assert len(ctx["decompilation_excerpt"]) <= 12000
     assert "assembly_excerpt" not in ctx

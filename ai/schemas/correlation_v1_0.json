@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/ai/correlation-v1.0.json",
+  "title": "AI behavior correlation v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "behavior_findings", "evidence_ids", "affected_function_ids", "uncertainty", "rationale"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "behavior_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "description", "evidence_ids", "affected_function_ids"],
+        "properties": {
+          "title": {"type": "string", "maxLength": 200},
+          "description": {"type": "string", "maxLength": 1000},
+          "evidence_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 50
+          },
+          "affected_function_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 50
+          },
+          "suggested_technique_id": {"type": "string"}
+        }
+      },
+      "maxItems": 20
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "maxItems": 100
+    },
+    "affected_function_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "maxItems": 100
+    },
+    "uncertainty": {"type": "string", "maxLength": 1000},
+    "rationale": {"type": "string", "maxLength": 2000}
+  }
+}

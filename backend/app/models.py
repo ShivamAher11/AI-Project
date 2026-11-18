@@ -28,7 +28,9 @@ class Analysis(Base):
         CheckConstraint(
             "progress >= 0 AND progress <= 100", name="ck_analyses_progress"
         ),
-        CheckConstraint("format IN ('pe', 'elf')", name="ck_analyses_format"),
+        CheckConstraint(
+            "format IN ('pe', 'elf', 'generic')", name="ck_analyses_format"
+        ),
         CheckConstraint(
             "bitness IS NULL OR bitness IN (32, 64)", name="ck_analyses_bitness"
         ),
@@ -176,6 +178,7 @@ class Function(Base):
     artifact_size: Mapped[int | None] = mapped_column(BigInteger)
     ai_summary: Mapped[str | None] = mapped_column(Text)
     ai_summary_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
 
 class CallEdge(Base):
     __tablename__ = "call_edges"

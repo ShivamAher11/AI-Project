@@ -88,14 +88,21 @@ def normalize_analysis(
         key=lambda row: (_addr_sort(row, "offset"), row["encoding"], row["value"]),
     )
     ghidra_result = ghidra_result or {
-        "source": "none", "decomp_status": "NOT_RUN", "functions": [], "edges": [],
+        "source": "none",
+        "decomp_status": "NOT_RUN",
+        "functions": [],
+        "edges": [],
     }
     source = ghidra_result.get("source", "none")
     if source not in {"fixture", "real", "none"}:
         raise NormalizationError("Invalid decompilation source.")
     decomp_status = ghidra_result.get("decomp_status")
     if decomp_status is None:
-        decomp_status = "OK" if source in {"fixture", "real"} and ghidra_result.get("functions") else "NOT_RUN"
+        decomp_status = (
+            "OK"
+            if source in {"fixture", "real"} and ghidra_result.get("functions")
+            else "NOT_RUN"
+        )
     if decomp_status not in {"OK", "FAILED", "TIMEOUT", "NOT_RUN"}:
         raise NormalizationError("Invalid decompilation status.")
     id_prefix = str(UUID(analysis_id))
@@ -195,6 +202,9 @@ def normalize_analysis(
         "decomp_status": decomp_status,
         "source": source,
         "strings_truncated": bool(static["strings_truncated"]),
+        "parser_coverage": static.get("parser_coverage", "none"),
+        "parser_limitations": static.get("parser_limitations", ""),
+        "generic_observations": static.get("generic_observations", None),
         "possible_packing": bool(static["possible_packing"]),
         "packing_note": static["packing_note"],
         "file": {

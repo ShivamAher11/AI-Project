@@ -77,6 +77,56 @@ def test_openai_compatible_request_and_response():
     assert seen["body"]["stream"] is False
 
 
+def test_reasoning_effort_param_sent_in_body():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "ok"}}]}
+        )
+
+    provider = LLMProvider(config(), transport=httpx.MockTransport(handler))
+    provider.complete(
+        [{"role": "user", "content": "hello"}], reasoning_effort="none"
+    )
+    assert seen["body"]["reasoning_effort"] == "none"
+
+
+def test_reasoning_effort_from_config_fallback():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "ok"}}]}
+        )
+
+    provider = LLMProvider(
+        config(reasoning_effort="none"), transport=httpx.MockTransport(handler)
+    )
+    provider.complete([{"role": "user", "content": "hello"}])
+    assert seen["body"]["reasoning_effort"] == "none"
+
+
+def test_reasoning_effort_param_overrides_config():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "ok"}}]}
+        )
+
+    provider = LLMProvider(
+        config(reasoning_effort="low"), transport=httpx.MockTransport(handler)
+    )
+    provider.complete(
+        [{"role": "user", "content": "hello"}], reasoning_effort="none"
+    )
+    assert seen["body"]["reasoning_effort"] == "none"
+
+
 def test_unexpected_response_is_reported_without_leaking_payload():
     transport = httpx.MockTransport(
         lambda _request: httpx.Response(200, json={"not": "a completion"})
@@ -139,13 +189,13 @@ def test_response_format_is_passed_through():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["body"] = json.loads(request.content)
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": "{}"}}]}
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 
     provider = LLMProvider(config(), transport=httpx.MockTransport(handler))
     provider.generate_structured(
-        system_prompt="sys", user_prompt="user", max_tokens=100,
+        system_prompt="sys",
+        user_prompt="user",
+        max_tokens=100,
         response_format={"type": "json_object"},
     )
     assert seen["body"].get("response_format") == {"type": "json_object"}
@@ -176,9 +226,7 @@ def test_tunnel_and_bearer_auth_sent_separately():
     def handler(request: httpx.Request) -> httpx.Response:
         seen["authorization"] = request.headers.get("authorization")
         seen["proxy_authorization"] = request.headers.get("proxy-authorization")
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": "ok"}}]}
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
     provider = LLMProvider(
         config(
@@ -197,9 +245,7 @@ def test_tunnel_auth_sent_only_when_both_credentials_present():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["proxy_authorization"] = request.headers.get("proxy-authorization")
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": "ok"}}]}
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
 
     # Only username set: no tunnel header.
     provider = LLMProvider(
@@ -235,9 +281,7 @@ def test_status_redacts_tunnel_credentials():
 
 
 def test_arbitrary_host_rejected():
-    provider = LLMProvider(
-        config(base_url="https://attacker.example/v1")
-    )
+    provider = LLMProvider(config(base_url="https://attacker.example/v1"))
     with pytest.raises(AIConfigurationError, match="LLM_ALLOWED_HOSTS"):
         provider.complete([{"role": "user", "content": "hello"}])
 

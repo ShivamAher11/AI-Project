@@ -8,11 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from ai.input_adapter import build_function_input, list_eligible_functions, summary_of_input
+from ai.input_adapter import (
+    build_function_input,
+    list_eligible_functions,
+    summary_of_input,
+)
 
 ROOT = Path(__file__).parents[2]
-FULL = json.loads((ROOT / "fixtures/analysis-full.json").read_text(encoding="utf-8-sig"))
-PARTIAL = json.loads((ROOT / "fixtures/analysis-partial.json").read_text(encoding="utf-8-sig"))
+FULL = json.loads(
+    (ROOT / "fixtures/analysis-full.json").read_text(encoding="utf-8-sig")
+)
+PARTIAL = json.loads(
+    (ROOT / "fixtures/analysis-partial.json").read_text(encoding="utf-8-sig")
+)
 
 INJECT_FID = "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00"
 REG_FID = "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001d00"
@@ -40,7 +48,10 @@ def test_full_fixture_adapter_returns_function_input():
     }
 
     # Graph edges captured.
-    assert any(c["caller"] == "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00" for c in result["graph"]["callers"])
+    assert any(
+        c["caller"] == "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001b00"
+        for c in result["graph"]["callers"]
+    )
     assert result["graph"]["imports"] == [
         "OpenProcess",
         "VirtualAllocEx",
@@ -57,7 +68,10 @@ def test_full_fixture_adapter_returns_function_input():
 
     # Strings are returned in full (bounded by the normalized schema).
     assert len(result["strings"]) == 3
-    assert any(s["value"] == "Software\\Microsoft\\Windows\\CurrentVersion\\Run" for s in result["strings"])
+    assert any(
+        s["value"] == "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        for s in result["strings"]
+    )
 
     # Decompilation present for the inject function.
     assert result["decompilation_excerpt"] is not None

@@ -1,7 +1,7 @@
-
 import { useEffect, useState } from "react";
-import { getOverview, getFindings } from "../lib/api";
+import { getOverview, getFindings, getStatus } from "../lib/api";
 import type { OverviewView, FindingView } from "../lib/api";
+import { Markdown } from "../components/Markdown";
 
 interface ReportPageProps {
   analysisId: string;
@@ -48,6 +48,52 @@ function buildMarkdown(
     `- Functions: ${overview.counts.functions}`,
     `- Findings: ${findings.length}`,
     "",
+    "## AI Assessment",
+    "",
+    `- **Verdict:** ${overview.aiReport?.verdict ?? "Not available"}`,
+    `- **Model:** ${overview.aiReport?.model ?? "Not available"}`,
+    `- **Generated at:** ${overview.aiReport?.generated_at ?? "Not available"}`,
+    "",
+    "### Summary",
+    "",
+    overview.aiReport?.summary ?? (overview.stage === "AI_ANALYSIS"
+      ? "The automatic AI assessment is being generated. This report will refresh when analysis finishes."
+      : overview.aiStatus === "DEGRADED" || overview.aiStatus === "DISABLED" || overview.aiStatus === "FAILED"
+        ? "Automatic AI assessment did not complete. Deterministic findings remain available."
+        : "No AI assessment was saved for this analysis."),
+    "",
+    "### Rationale",
+    "",
+    overview.aiReport?.rationale ?? "No rationale provided.",
+    "",
+    "### Uncertainty",
+    "",
+    overview.aiReport?.uncertainty ?? "No uncertainty stated.",
+    "",
+    "### Limitations",
+    "",
+    ...(overview.aiReport?.limitations ?? []).map((limitation) => `- ${limitation}`),
+    "",
+    "### Evidence References",
+    "",
+    ...(overview.aiReport?.evidence_ids ?? []).map((evidenceId, index) => `- E${index + 1}: ${evidenceId}`),
+    "",
+    "### Disclaimer",
+    "",
+    overview.aiReport?.disclaimer ?? "AI-generated assessment of selected static evidence; not a verdict.",
+    "",
+    "## Correlated Behaviors",
+    "",
+    ...(overview.aiReport?.correlation?.behavior_findings?.length
+      ? overview.aiReport.correlation.behavior_findings.flatMap((behavior) => [
+          `### ${behavior.title}`,
+          "",
+          behavior.description,
+          "",
+          `Evidence: ${behavior.evidence_ids.join(", ") || "None cited"}`,
+          "",
+        ])
+      : [overview.aiReport ? "No correlated behaviors were validated." : "AI enrichment is not available yet.", ""]),
     "## Findings",
     "",
   ];
@@ -158,10 +204,41 @@ export function ReportPage({ analysisId }: ReportPageProps) {
 
     loadReport();
 
-    return () => {
-      active = false;
+    let timer = 0;
+    const refresh = async () => {
+      try {
+        const status = await getStatus(analysisId);
+        if (active) {
+          setOverview((current) => current ? {
+            ...current,
+            status: status.status,
+            stage: status.stage,
+            progress: status.progress,
+            aiStatus: status.ai_status,
+          } : current);
+        }
+        if (active && ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(status.status)) {
+          const [overviewData, findingsData] = await Promise.all([
+            getOverview(analysisId),
+            getFindings(analysisId),
+          ]);
+          if (active) {
+            setOverview(overviewData);
+            setFindings(findingsData);
+            setReport(buildMarkdown(overviewData, findingsData));
+          }
+          return;
+        }
+      } catch { /* Keep the report visible; retry while the analysis is active. */ }
+      if (active) timer = window.setTimeout(refresh, 2500);
     };
+    timer = window.setTimeout(refresh, 2500);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [analysisId]);
+
+  useEffect(() => {
+    if (overview) setReport(buildMarkdown(overview, findings));
+  }, [overview, findings]);
 
   function downloadReport() {
     if (!report || !overview) return;
@@ -175,11 +252,9 @@ export function ReportPage({ analysisId }: ReportPageProps) {
 
     link.href = url;
     link.download = `analysis-report-${overview.id}.md`;
-
     document.body.appendChild(link);
     link.click();
     link.remove();
-
     URL.revokeObjectURL(url);
   }
 
@@ -201,6 +276,7 @@ export function ReportPage({ analysisId }: ReportPageProps) {
         >
           Download Markdown
         </button>
+
       </section>
 
       {loading && (
@@ -247,7 +323,9 @@ export function ReportPage({ analysisId }: ReportPageProps) {
               </span>
             </div>
 
-            <pre className="report-preview">{report}</pre>
+            <div className="report-preview">
+              <Markdown text={report} className="report-markdown" />
+            </div>
           </section>
         </>
       )}

@@ -32,7 +32,8 @@ from app.storage import (
 from worker.lief_extract import (
     InvalidBinary,
     UnsupportedArchitecture,
-    extract_pe,
+    extract_static,
+    extract_generic,
     load_import_categories,
 )
 from worker.normalize import (
@@ -367,15 +368,18 @@ def _run_pipeline_ai_stage(analysis_id: str) -> tuple[str, str | None, str | Non
     except ValueError:
         payload = {}
     if (
-        response.status_code == 200
+        isinstance(payload, dict)
+        and response.status_code == 200
         and payload.get("ok") is True
         and isinstance(payload.get("report"), dict)
     ):
         return ("OK", None, None)
 
-    error = payload.get("error") if isinstance(payload, dict) else None
+    error = payload.get("error") or payload.get("detail") if isinstance(payload, dict) else None
     code = error.get("code") if isinstance(error, dict) else None
     message = error.get("message") if isinstance(error, dict) else None
+    if not isinstance(message, str) and isinstance(error, str):
+        message = error
     if code == "AI_DISABLED":
         return (
             "DISABLED",
@@ -398,91 +402,16 @@ def _run_pipeline_ai_stage(analysis_id: str) -> tuple[str, str | None, str | Non
         return (
             "DEGRADED",
             code,
-            "The configured Ollama-compatible endpoint did not complete the pipeline AI request.",
+            str(message or "The configured Ollama-compatible endpoint did not complete the pipeline AI request."),
         )
     return (
         "DEGRADED",
         str(code or "AI_PIPELINE_FAILED"),
-        "The API-mediated AI stage failed; deterministic static findings remain available.",
-    )
-def _run_stage1_function_summaries(
-    analysis_id: str,
-) -> tuple[str, str | None, str | None]:
-    """Ask the API to run Stage 1 function summaries; worker never calls LLM directly."""
-    token = os.getenv("PIPELINE_AI_INTERNAL_TOKEN", "").strip()
-    if len(token) < 32:
-        return (
-            "DISABLED",
-            "PIPELINE_AI_NOT_CONFIGURED",
-            "Pipeline AI was skipped because PIPELINE_AI_INTERNAL_TOKEN is missing or shorter than 32 characters.",
-        )
-
-    base_url = os.getenv(
-        "PIPELINE_AI_API_URL", "http://api:8000/api/v1/ai/internal/analyses"
-    ).rstrip("/")
-    try:
-        timeout_s = max(
-            10.0, min(240.0, float(os.getenv("PIPELINE_AI_REQUEST_TIMEOUT_S", "150")))
-        )
-    except ValueError:
-        timeout_s = 150.0
-    try:
-        response = httpx.post(
-            f"{base_url}/{analysis_id}/function-summaries",
-            headers={"X-Pipeline-AI-Token": token, "Accept": "application/json"},
-            timeout=timeout_s,
-        )
-    except httpx.TimeoutException:
-        return (
-            "DEGRADED",
-            "AI_PIPELINE_TIMEOUT",
-            "The API-mediated Stage 1 AI stage timed out; deterministic static findings remain available.",
-        )
-    except httpx.RequestError:
-        return (
-            "DEGRADED",
-            "AI_API_UNAVAILABLE",
-            "The worker could not reach the internal API for Stage 1 AI; deterministic static findings remain available.",
-        )
-
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = {}
-    if response.status_code == 200 and payload.get("ok") is True:
-        return ("OK", None, None)
-
-    error = payload.get("error") if isinstance(payload, dict) else None
-    code = error.get("code") if isinstance(error, dict) else None
-    message = error.get("message") if isinstance(error, dict) else None
-    if code == "AI_DISABLED":
-        return (
-            "DISABLED",
-            "AI_DISABLED",
-            str(message or "The configured AI provider is disabled."),
-        )
-    if code == "PIPELINE_AI_NOT_CONFIGURED":
-        return (
-            "DISABLED",
-            code,
-            str(message or "The pipeline AI internal token is not configured."),
-        )
-    if code == "PIPELINE_AI_FORBIDDEN":
-        return (
-            "DEGRADED",
-            code,
-            "The API rejected the worker's internal pipeline token. Ensure the same PIPELINE_AI_INTERNAL_TOKEN is set for both services.",
-        )
-    if code == "AI_PROVIDER_UNAVAILABLE":
-        return (
-            "DEGRADED",
-            code,
-            "The configured Ollama-compatible endpoint did not complete the Stage 1 AI request.",
-        )
-    return (
-        "DEGRADED",
-        str(code or "AI_PIPELINE_FAILED"),
-        "The API-mediated Stage 1 AI stage failed; deterministic static findings remain available.",
+        (
+            f"The AI report could not be validated: {message[:500]}"
+            if isinstance(message, str) and message.strip()
+            else "The API-mediated AI stage failed; deterministic static findings remain available."
+        ),
     )
 
 
@@ -543,24 +472,39 @@ def analyze(self, analysis_id: str):
             original_filename = current.original_filename
             extension_mismatch = current.extension_mismatch
         upload_path = upload_file_path(data_root, analysis_id)
-        static = extract_pe(
-            upload_path,
-            original_filename=original_filename,
-            extension_mismatch=extension_mismatch,
-            categories=load_import_categories(),
-        )
+        try:
+            static = extract_static(
+                upload_path,
+                original_filename=original_filename,
+                extension_mismatch=extension_mismatch,
+                categories=load_import_categories(),
+            )
+        except (InvalidBinary, UnsupportedArchitecture) as exc:
+            # Any regular file is accepted: fall back to bounded generic
+            # static observations when a format parser is unavailable or fails.
+            logger.warning("format_parser_unavailable: %s", exc)
+            static = extract_generic(
+                upload_path,
+                original_filename=original_filename,
+                extension_mismatch=extension_mismatch,
+            )
         _persist_static_metadata(analysis_id, static)
-        time.sleep(PLACEHOLDER_DELAY_S)
 
         _enter_stage(analysis_id, "RE_ANALYSIS", 35)
         try:
             ghidra_result = GhidraRunner().run(
-                analysis_id, original_filename, binary_path=upload_path, work_dir=temp_dir,
+                analysis_id,
+                original_filename,
+                binary_path=upload_path,
+                work_dir=temp_dir,
             )
         except GhidraExecutionError as exc:
             logger.warning("ghidra_analysis_unavailable: %s", exc)
             ghidra_result = {
-                "source": "none", "decomp_status": "FAILED", "functions": [], "edges": [],
+                "source": "none",
+                "decomp_status": "FAILED",
+                "functions": [],
+                "edges": [],
                 "toolchain": {"ghidra": "unknown", "jdk": "unknown"},
             }
 
@@ -616,8 +560,8 @@ def analyze(self, analysis_id: str):
                 validate_normalized(normalized)
                 _write_normalized(data_root, analysis_id, normalized)
             elif stage == "AI_ANALYSIS":
-                ai_status, ai_error_code, ai_error_message = _run_stage1_function_summaries(
-                    analysis_id
+                ai_status, ai_error_code, ai_error_message = (
+                    _run_pipeline_ai_stage(analysis_id)
                 )
                 with new_session() as session:
                     current = session.scalar(
@@ -632,8 +576,6 @@ def analyze(self, analysis_id: str):
                         current.error_code = ai_error_code
                         current.error_message = ai_error_message
                     session.commit()
-            else:
-                time.sleep(PLACEHOLDER_DELAY_S)
 
         with new_session() as session:
             analysis = session.scalar(
@@ -658,14 +600,20 @@ def analyze(self, analysis_id: str):
                     )
                 if analysis.decomp_status != "OK":
                     if normalized["decomp_status"] == "TIMEOUT":
-                        ghidra_summary = "Ghidra analysis timed out; decompilation is incomplete."
+                        ghidra_summary = (
+                            "Ghidra analysis timed out; decompilation is incomplete."
+                        )
                     elif normalized["decomp_status"] == "FAILED":
                         ghidra_summary = "Ghidra analysis failed or is unavailable; decompilation is incomplete."
                     elif normalized["source"] == "fixture":
                         ghidra_summary = "Fixture decompilation output is incomplete."
                     else:
-                        ghidra_summary = "Ghidra analysis was not run; decompilation is incomplete."
-                    analysis.error_message = f"{analysis.error_message} {ghidra_summary}"
+                        ghidra_summary = (
+                            "Ghidra analysis was not run; decompilation is incomplete."
+                        )
+                    analysis.error_message = (
+                        f"{analysis.error_message} {ghidra_summary}"
+                    )
             elif analysis.decomp_status != "OK":
                 transition_analysis(analysis, "PARTIAL", 95)
                 if normalized["decomp_status"] == "TIMEOUT":
@@ -696,6 +644,7 @@ def analyze(self, analysis_id: str):
         )
         return {"id": analysis_id, "status": "FAILED"}
     except NormalizationError:
+        logger.exception("analysis_normalization_failed")
         _mark_failed(
             analysis_id,
             "INTERNAL_ERROR",

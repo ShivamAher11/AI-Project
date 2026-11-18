@@ -223,14 +223,6 @@ async def create_analysis(request: Request):
         raise _problem(400, "EMPTY_FILE", "Uploaded file is empty.")
 
     binary_format = _detect_format(prefix)
-    if binary_format is None:
-        remove_analysis_files(data_root, str(analysis_id))
-        raise _problem(
-            400,
-            "UNSUPPORTED_FORMAT",
-            "Unsupported or invalid binary. Upload a valid PE or ELF.",
-        )
-
     original_filename = (file.filename or "upload").replace("\x00", "")[:255]
     mismatch = _extension_mismatch(original_filename, binary_format)
     now = datetime.now(timezone.utc)
@@ -252,7 +244,7 @@ async def create_analysis(request: Request):
                 sha256=sha256,
                 md5=md5,
                 file_size=size,
-                format=binary_format,
+                format=binary_format or "generic",
                 arch="unknown",
                 bitness=None,
                 endian="le",
@@ -529,7 +521,11 @@ def analysis_overview(analysis_id: uuid.UUID):
                 "decomp_status": analysis.decomp_status,
                 "ai_status": analysis.ai_status,
                 "source": (
-                    "fixture" if analysis.ghidra_source == "fixture" else "ghidra"
+                    "fixture"
+                    if analysis.ghidra_source == "fixture"
+                    else "ghidra"
+                    if analysis.ghidra_source == "real"
+                    else "none"
                 ),
             },
             "ai_report": analysis.ai_report,

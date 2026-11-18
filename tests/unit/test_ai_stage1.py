@@ -14,7 +14,9 @@ from ai.summarizer import (
 )
 
 ROOT = Path(__file__).parents[2]
-FULL = json.loads((ROOT / "fixtures/analysis-full.json").read_text(encoding="utf-8-sig"))
+FULL = json.loads(
+    (ROOT / "fixtures/analysis-full.json").read_text(encoding="utf-8-sig")
+)
 
 FID_INJECT = "a1b2c3d4-e5f6-4789-8123-456789abcdef:0x140001c00"
 
@@ -36,12 +38,16 @@ def valid_summary(function_id=FID_INJECT, evidence_ids=None):
 class EchoProvider(MockProvider):
     """Returns a valid summary for whichever function the summarizer selected."""
 
-    def generate_structured(self, *, system_prompt, user_prompt, max_tokens, response_format=None):
+    def generate_structured(
+        self, *, system_prompt, user_prompt, max_tokens, response_format=None
+    ):
         import re
 
         m = re.search(r"Function: ([^ ]+) at", user_prompt)
         fid = m.group(1) if m else FID_INJECT
-        self.responses.append(json.dumps(valid_summary(function_id=fid, evidence_ids=[])))
+        self.responses.append(
+            json.dumps(valid_summary(function_id=fid, evidence_ids=[]))
+        )
         return super().generate_structured(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -52,9 +58,7 @@ class EchoProvider(MockProvider):
 
 def test_select_functions_returns_top_k_and_boosts_rule_hits():
     functions = FULL["functions"]
-    signal_counts = {
-        fid: 1 for fid in FULL["rule_hits"][0]["function_ids"]
-    }
+    signal_counts = {fid: 1 for fid in FULL["rule_hits"][0]["function_ids"]}
     result = select_functions(
         functions,
         signal_counts=signal_counts,
@@ -184,8 +188,11 @@ def test_partial_analysis_keeps_static_findings():
 
 def test_ai_disabled_keeps_deterministic_results():
     """AI disabled keeps deterministic results intact."""
+
     class DisabledProvider:
-        def generate_structured(self, *, system_prompt, user_prompt, max_tokens, response_format=None):
+        def generate_structured(
+            self, *, system_prompt, user_prompt, max_tokens, response_format=None
+        ):
             raise AIConfigurationError("AI disabled")
 
     summarizer = Stage1Summarizer(DisabledProvider())
@@ -199,9 +206,13 @@ def test_ai_disabled_keeps_deterministic_results():
 
 def test_timeout_is_degraded():
     """Timeout is reported as degraded without erasing deterministic output."""
+
     class TimeoutProvider:
-        def generate_structured(self, *, system_prompt, user_prompt, max_tokens, response_format=None):
+        def generate_structured(
+            self, *, system_prompt, user_prompt, max_tokens, response_format=None
+        ):
             from ai.provider import AIProviderError
+
             raise AIProviderError("AI request timed out.")
 
     summarizer = Stage1Summarizer(TimeoutProvider())

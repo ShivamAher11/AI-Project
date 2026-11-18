@@ -39,7 +39,11 @@ def upgrade() -> None:
     if "ai_summary_json" not in columns:
         op.add_column(
             "functions",
-            sa.Column("ai_summary_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+            sa.Column(
+                "ai_summary_json",
+                postgresql.JSONB(astext_type=sa.Text()),
+                nullable=True,
+            ),
         )
 
     ai_run_columns = _table_columns("ai_runs")
@@ -79,7 +83,9 @@ def downgrade() -> None:
         bind = op.get_bind()
         inspector = inspect(bind)
         for fk in inspector.get_foreign_keys("ai_runs"):
-            if fk["referred_table"] == "functions" and "function_id" in (fk.get("constrained_columns") or []):
+            if fk["referred_table"] == "functions" and "function_id" in (
+                fk.get("constrained_columns") or []
+            ):
                 op.drop_constraint(fk["name"], "ai_runs", type_="foreignkey")
                 break
         op.drop_column("ai_runs", "function_id")

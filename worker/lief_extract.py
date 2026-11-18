@@ -247,3 +247,104 @@ def extract_pe(
         raise InvalidBinary(
             "The uploaded file could not be parsed as a valid PE binary."
         ) from exc
+
+
+def extract_generic(
+    path: str | Path,
+    *,
+    original_filename: str = "upload",
+    extension_mismatch: bool = False,
+) -> dict:
+    """Bounded generic static observations for formats without a parser.
+
+    Never loads, executes, or interprets the file beyond read-only metadata,
+    magic sniffing, hashing, entropy, and capped printable strings.
+    """
+    source = Path(path)
+    sha256, md5, size = _hash_file(source)
+    prefix = b""
+    with source.open("rb") as stream:
+        prefix = stream.read(16)
+    magic_detected = "unknown"
+    if prefix.startswith(b"MZ"):
+        magic_detected = "pe"
+    elif prefix.startswith(b"\x7fELF"):
+        magic_detected = "elf"
+    elif prefix:
+        magic_detected = "bytes"
+
+    with source.open("rb") as stream:
+        file_bytes = stream.read()
+    extracted_strings, strings_truncated = extract_strings(file_bytes)
+    entropy = shannon_entropy(file_bytes)
+    high_entropy = entropy >= 7.5
+    return {
+        "sha256": sha256,
+        "md5": md5,
+        "size": size,
+        "format": "generic",
+        "arch": "unknown",
+        "bitness": None,
+        "endian": "le",
+        "entry_point": None,
+        "original_filename": original_filename,
+        "extension_mismatch": bool(extension_mismatch),
+        "sections": [],
+        "imports": [],
+        "exports": [],
+        "strings": extracted_strings,
+        "strings_truncated": strings_truncated,
+        "possible_packing": high_entropy,
+        "packing_note": (
+            "high entropy - heuristic, not proof" if high_entropy else None
+        ),
+        "parser_coverage": "generic",
+        "parser_limitations": (
+            "No format-specific parser available; bounded metadata, magic/type "
+            "detection, hashes, entropy, and capped printable strings only."
+        ),
+        "generic_observations": {
+            "magic_detected": magic_detected,
+            "parser_available": False,
+            "parser_name": None,
+            "parser_version": None,
+            "entropy": entropy,
+            "strings": extracted_strings,
+            "strings_truncated": strings_truncated,
+            "hashes": {
+                "sha256": sha256,
+                "md5": md5,
+                "size": size,
+            },
+        },
+    }
+
+
+def extract_static(
+    path: str | Path,
+    *,
+    original_filename: str = "upload",
+    extension_mismatch: bool = False,
+    categories: dict[str, str] | None = None,
+) -> dict:
+    """Dispatch to the best available static parser, falling back to generic.
+
+    PE/ELF go through LIEF when available. Every other regular file receives
+    bounded generic static observations. Never executes input.
+    """
+    source = Path(path)
+    prefix = b""
+    with source.open("rb") as stream:
+        prefix = stream.read(4)
+    if prefix.startswith(b"MZ"):
+        return extract_pe(
+            path,
+            original_filename=original_filename,
+            extension_mismatch=extension_mismatch,
+            categories=categories,
+        )
+    return extract_generic(
+        path,
+        original_filename=original_filename,
+        extension_mismatch=extension_mismatch,
+    )

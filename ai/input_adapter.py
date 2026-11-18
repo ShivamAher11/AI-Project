@@ -15,9 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_function_input(
-    normalized: dict[str, Any], fid: str
-) -> dict[str, Any]:
+def build_function_input(normalized: dict[str, Any], fid: str) -> dict[str, Any]:
     """Return bounded AI input for one function from a normalized analysis.
 
     The output is deterministic and contains only data that may be sent to
@@ -59,9 +57,7 @@ def build_function_input(
             callers.append({"caller": edge.get("caller"), "type": edge.get("type")})
 
     # Imports called by this function (by name match on import edges).
-    import_map = {
-        imp.get("name"): imp for imp in normalized.get("imports", [])
-    }
+    import_map = {imp.get("name"): imp for imp in normalized.get("imports", [])}
     imports = [import_map[name] for name in import_callees if name in import_map]
 
     # Evidence IDs relevant to this function via signals and rule hits.
@@ -79,8 +75,14 @@ def build_function_input(
     strings = list(normalized.get("strings", []))
 
     # Rule hits and findings involving this function.
-    rule_hits = [h for h in normalized.get("rule_hits", []) if fid in h.get("function_ids", [])]
-    findings = [f for f in normalized.get("findings", []) if fid in _finding_function_ids(f, normalized)]
+    rule_hits = [
+        h for h in normalized.get("rule_hits", []) if fid in h.get("function_ids", [])
+    ]
+    findings = [
+        f
+        for f in normalized.get("findings", [])
+        if fid in _finding_function_ids(f, normalized)
+    ]
 
     # Bounded decompilation excerpt; may be null when decompilation failed.
     decomp = func.get("decompiled_excerpt")
@@ -113,7 +115,9 @@ def build_function_input(
     }
 
 
-def _finding_function_ids(finding: dict[str, Any], normalized: dict[str, Any]) -> set[str]:
+def _finding_function_ids(
+    finding: dict[str, Any], normalized: dict[str, Any]
+) -> set[str]:
     """Return function IDs referenced by a finding via its signal IDs."""
     ids: set[str] = set()
     for sig_id in finding.get("signal_ids", []):
@@ -138,7 +142,9 @@ def summary_of_input(input_dict: dict[str, Any]) -> dict[str, Any]:
         "source": input_dict.get("source"),
         "function_id": input_dict.get("function_id"),
         "function_name": (input_dict.get("function") or {}).get("name"),
-        "decompiler_status": (input_dict.get("function") or {}).get("decompiler_status"),
+        "decompiler_status": (input_dict.get("function") or {}).get(
+            "decompiler_status"
+        ),
         "has_decompilation": input_dict.get("decompilation_excerpt") is not None,
         "import_count": len(input_dict.get("imports", [])),
         "string_count": len(input_dict.get("strings", [])),

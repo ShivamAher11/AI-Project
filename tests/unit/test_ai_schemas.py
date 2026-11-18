@@ -69,9 +69,7 @@ def test_rejects_wrong_types():
 def test_rejects_invalid_function_id():
     with pytest.raises(SchemaValidationError, match="not found"):
         validate_function_summary(
-            _summary(
-                function_id="a1b2c3d4-e5f6-4789-8123-456789abcdef:0xdeadbeef"
-            ),
+            _summary(function_id="a1b2c3d4-e5f6-4789-8123-456789abcdef:0xdeadbeef"),
             function_ids={FUNC_ID},
             evidence_ids=EVIDENCE_IDS,
         )
@@ -80,9 +78,7 @@ def test_rejects_invalid_function_id():
 def test_rejects_unknown_evidence_id():
     with pytest.raises(SchemaValidationError, match="Unknown evidence"):
         validate_function_summary(
-            _summary(
-                evidence_ids=["I-CreateRemoteThread", "STR-FAKE0000000000"]
-            ),
+            _summary(evidence_ids=["I-CreateRemoteThread", "STR-FAKE0000000000"]),
             function_ids={FUNC_ID},
             evidence_ids=EVIDENCE_IDS,
         )

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { generateAiExplanation, getOverview, getStatus, type AiExplanationResponse, type OverviewView, type StatusSnapshot } from "../lib/api";
+import { getOverview, getStatus, type OverviewView, type StatusSnapshot } from "../lib/api";
 import { subscribeAnalysisEvents, type AnalysisEvent } from "../lib/sse";
 import { RiskBreakdown } from "../components/RiskBreakdown";
 import { SSEBanner } from "../components/SSEBanner";
 import { FindingCard } from "../components/FindingCard";
+import { Markdown } from "../components/Markdown";
 import { USE_FIXTURES } from "../lib/api";
 
 function LoadingSkeleton() {
@@ -20,15 +21,11 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
   const [lastEvent, setLastEvent] = useState<AnalysisEvent | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
-  const [aiExplanation, setAiExplanation] = useState<AiExplanationResponse | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     let active = true;
     setOverview(null); setStatus(null); setLastEvent(null); setError("");
-    setAiExplanation(null); setAiBusy(false); setAiError("");
-    getOverview(analysisId).then((data) => { if (active) { setOverview(data); setAiExplanation(data.aiReport ?? null); } }).catch((e: unknown) => {
+    getOverview(analysisId).then((data) => { if (active) { setOverview(data); } }).catch((e: unknown) => {
       if (active) setError(e instanceof Error ? e.message : "Could not load this analysis.");
     });
     getStatus(analysisId).then((data) => { if (active) setStatus(data); }).catch(() => undefined);
@@ -45,7 +42,7 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
           if (active) setStatus(value);
           if (active && ["COMPLETED", "PARTIAL"].includes(value.status)) {
             const latest = await getOverview(analysisId);
-            if (active) { setOverview(latest); setAiExplanation(latest.aiReport ?? null); }
+            if (active) { setOverview(latest); }
             return;
           }
         } catch { /* SSE remains the live progress channel. */ }
@@ -54,22 +51,9 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
       poll = window.setTimeout(refresh, 3000);
     }
     return () => { active = false; stopEvents(); window.clearTimeout(poll); };
-    // Reset and connect once per analysis id; status polling is deliberately separate.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisId]);
 
-  async function requestAiExplanation() {
-    setAiBusy(true);
-    setAiError("");
-    try {
-      const result = await generateAiExplanation(analysisId);
-      setAiExplanation(result);
-    } catch (reason: unknown) {
-      setAiError(reason instanceof Error ? reason.message : "Could not generate an AI explanation.");
-    } finally {
-      setAiBusy(false);
-    }
-  }
+  const assessment = overview?.aiReport ?? null;
 
   if (error) return <div className="error-panel" role="alert"><h1>Overview unavailable</h1><p>{error}</p></div>;
   if (!overview || !status) return <LoadingSkeleton />;
@@ -106,30 +90,44 @@ export function OverviewPage({ analysisId, navigate }: { analysisId: string; nav
         : <div className="empty-state"><span className="empty-icon" aria-hidden="true">—</span><strong>No indicators by current rule set.</strong><span>Does not prove benign.</span></div>}
     </section>
 
-    <section className="panel ai-explanation-panel">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">OLLAMA · PIPELINE + ON-DEMAND</div>
-          <h2>AI explanation</h2>
-          <p className="ai-help">Uses selected static metadata, rule findings, and evidence. It cannot change the deterministic score or verdict.</p>
-        </div>
-        <button className="button button-primary" type="button"
-          disabled={USE_FIXTURES || aiBusy || !["COMPLETED", "PARTIAL"].includes(live.status)}
-          onClick={() => { void requestAiExplanation(); }}>
-          {aiBusy ? "Generating…" : aiExplanation ? "Regenerate explanation" : "Explain findings"}
-        </button>
-      </div>
-      {USE_FIXTURES && <p className="ai-help">Switch to the live API build to use your configured Ollama endpoint.</p>}
-      {aiError && <p className="ai-error" role="alert">{aiError}</p>}
-      {aiBusy && <p className="ai-help" aria-live="polite">Waiting for the configured model…</p>}
-      {aiExplanation
-        ? <div className="ai-explanation-body">
-            <div className="ai-model-meta">Model: <code>{aiExplanation.model}</code> · Input SHA-256: <code>{aiExplanation.input_sha256}</code></div>
-            <div className="ai-explanation-output">{aiExplanation.explanation}</div>
-            <p className="ai-help">{aiExplanation.disclaimer}</p>
+    {assessment && (
+      <section className="panel ai-assessment-panel">
+        <div className="panel-heading">
+          <div>
+            <div className="eyebrow">AI ASSESSMENT — VERIFY</div>
+            <h2>Evidence-based assessment</h2>
+            <p className="ai-help">Model-generated assessment of selected static evidence. Deterministic findings, score, severity, confidence, and ATT&CK ceilings are unchanged.</p>
           </div>
-        : <p className="ai-help">Generate a grounded explanation after analysis finishes. The raw uploaded binary is not sent to the model.</p>}
-    </section>
+          <span className={`verdict-badge verdict-${assessment.verdict.toLowerCase().replace(/_/g, "-")}`}>{assessment.verdict.replace(/_/g, " ")}</span>
+        </div>
+        <div className="ai-assessment-body">
+          <div className="ai-block"><span className="section-label">SUMMARY</span><Markdown text={assessment.summary} /></div>
+          <div className="ai-block"><span className="section-label">RATIONALE</span><Markdown text={assessment.rationale} /></div>
+          <div className="ai-block"><span className="section-label">UNCERTAINTY</span><Markdown text={assessment.uncertainty} /></div>
+          {assessment.limitations.length > 0 && (
+            <div className="ai-block"><span className="section-label">LIMITATIONS</span><ul>{assessment.limitations.map((limitation, index) => <li key={index}><Markdown text={limitation} /></li>)}</ul></div>
+          )}
+          <div className="evidence-row"><span className="section-label">EVIDENCE REFERENCES</span><div className="evidence-chips">
+            {assessment.evidence_ids.map((evidenceId, index) => <button key={index} className="evidence-chip">{`E${index + 1}:${evidenceId}`}</button>)}
+          </div></div>
+          <div className="ai-model-meta">Model: <code>{assessment.model}</code> · Input SHA-256: <code>{assessment.input_sha256}</code> · Generated: <code>{assessment.generated_at}</code></div>
+          <p className="ai-help">{assessment.disclaimer}</p>
+        </div>
+      </section>
+    )}
+    {!assessment && (
+      <section className="panel ai-assessment-panel" aria-live="polite">
+        <div className="eyebrow">AUTOMATIC AI ASSESSMENT</div>
+        <h2>{live.stage === "AI_ANALYSIS" ? "Enriching the report" : "AI assessment unavailable"}</h2>
+        <p className="ai-help">
+          {live.stage === "AI_ANALYSIS"
+            ? "Static analysis is complete. The API is synthesizing evidence and will add the assessment when ready."
+            : live.aiStatus === "DEGRADED" || live.aiStatus === "DISABLED" || live.aiStatus === "FAILED"
+              ? `${status.error?.message ?? "The automatic AI stage did not complete."} Deterministic findings and risk score remain available.`
+              : "The automatic AI assessment has not been saved for this analysis."}
+        </p>
+      </section>
+    )}
 
     <section className="panel provenance-panel">
       <div className="panel-heading"><div><div className="eyebrow">PROVENANCE</div><h2>Versions and counts</h2></div><span className="fixture-source">source: {overview.source}</span></div>

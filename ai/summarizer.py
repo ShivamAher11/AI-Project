@@ -6,6 +6,11 @@ selects functions deterministically (SPEC §26), validates model output strictly
 
 No raw binary or full artifact is ever sent to the model. Only bounded snippets
 and metadata for the current function are included.
+
+Rate limiting:
+- LLM_RPM caps requests per minute.
+- LLM_TPM_LIMIT caps output tokens per minute.
+- MAX_OUTPUT_TOKENS_PER_ANALYSIS caps total output tokens per analysis.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -137,26 +143,17 @@ def _signal_counts_for_functions(normalized: dict) -> dict[str, int]:
 
 def _relevant_imports(normalized: dict, fid: str) -> list[dict[str, Any]]:
     """Imports directly called by this function (import edges)."""
-    seen: set[str] = set()
+    import_map = {
+        imp.get("name"): imp for imp in normalized.get("imports", [])
+    }
     result: list[dict[str, Any]] = []
-    for edge in normalized.get("edges", []):
-        if edge.get("caller") != fid or edge.get("type") != "import":
-            continue
-        callee = edge.get("callee")
-        if callee in seen:
-            continue
-        seen.add(callee)
-        for imp in normalized.get("imports", []):
-            if imp.get("name") == callee:
-                result.append(
-                    {
-                        "library": imp.get("library"),
-                        "name": imp.get("name"),
-                        "address": imp.get("address"),
-                        "category": imp.get("category"),
-                    }
-                )
-                break
+    for hit in normalized.get("rule_hits", []):
+        if fid in hit.get("function_ids", []):
+            for ref in hit.get("evidence_refs", []) or []:
+                if ref.startswith("I-"):
+                    imp = import_map.get(ref[2:])
+                    if imp:
+                        result.append(imp)
     return result
 
 
@@ -167,25 +164,17 @@ def _string_ref(row: dict) -> str:
 
 def _relevant_strings(normalized: dict, fid: str) -> list[dict[str, Any]]:
     """Strings referenced in evidence for this function via rule hits/signals."""
-    refs: set[str] = set()
+    string_map = {s.get("offset"): s for s in normalized.get("strings", [])}
+    result: list[dict[str, Any]] = []
     for hit in normalized.get("rule_hits", []):
         if fid in hit.get("function_ids", []):
-            refs.update(hit.get("evidence_refs", []))
-    for sig in normalized.get("signals", []):
-        if fid in sig.get("function_ids", []):
-            refs.update(sig.get("evidence_refs", []))
-    string_refs = {r for r in refs if r.startswith("STR-")}
-    result = []
-    for s in normalized.get("strings", []):
-        if _string_ref(s) in string_refs:
-            result.append(
-                {
-                    "offset": s.get("offset"),
-                    "encoding": s.get("encoding"),
-                    "value": s.get("value", "")[:500],
-                    "category": s.get("category"),
-                }
-            )
+            for ref in hit.get("evidence_refs", []) or []:
+                if ref.startswith("STR-"):
+                    # STR- ids are hashes; match by value substring or index.
+                    for s in normalized.get("strings", []):
+                        if s.get("offset") == ref[4:]:
+                            result.append(s)
+                            break
     return result
 
 
@@ -193,40 +182,18 @@ def _evidence_ids_for_function(normalized: dict, fid: str) -> set[str]:
     ids: set[str] = set()
     for hit in normalized.get("rule_hits", []):
         if fid in hit.get("function_ids", []):
-            ids.update(hit.get("evidence_refs", []))
-    for sig in normalized.get("signals", []):
-        if fid in sig.get("function_ids", []):
-            ids.update(sig.get("evidence_refs", []))
+            ids.update(hit.get("evidence_refs", []) or [])
     return ids
+
+
 def _suspicious_api_counts(normalized: dict) -> dict[str, int]:
     """Count suspicious API usage per function via import edges."""
     counts: dict[str, int] = {}
-    suspicious = {
-        "CreateRemoteThread",
-        "NtCreateThreadEx",
-        "VirtualAllocEx",
-        "WriteProcessMemory",
-        "OpenProcess",
-        "RegCreateKeyExW",
-        "RegSetValueExW",
-        "WinHttpOpen",
-        "WinHttpConnect",
-        "WinHttpSendRequest",
-        "CreateProcessW",
-        "CreateProcessA",
-        "ShellExecuteW",
-        "WinExec",
-        "URLDownloadToFile",
-        "GetTempPath",
-    }
-    import_names = {imp.get("name") for imp in normalized.get("imports", [])}
-    for edge in normalized.get("edges", []):
-        if edge.get("type") != "import":
+    for hit in normalized.get("rule_hits", []):
+        if hit.get("absorbed"):
             continue
-        caller = edge.get("caller")
-        callee = edge.get("callee")
-        if callee in suspicious or callee in import_names:
-            counts[caller] = counts.get(caller, 0) + 1
+        for fid in hit.get("function_ids", []):
+            counts[fid] = counts.get(fid, 0) + 1
     return counts
 
 
@@ -234,15 +201,10 @@ def _string_counts(normalized: dict) -> dict[str, int]:
     """Count strings per function via string evidence refs."""
     counts: dict[str, int] = {}
     for hit in normalized.get("rule_hits", []):
+        if hit.get("absorbed"):
+            continue
         for fid in hit.get("function_ids", []):
-            for ref in hit.get("evidence_refs", []):
-                if ref.startswith("STR-"):
-                    counts[fid] = counts.get(fid, 0) + 1
-    for sig in normalized.get("signals", []):
-        for fid in sig.get("function_ids", []):
-            for ref in sig.get("evidence_refs", []):
-                if ref.startswith("STR-"):
-                    counts[fid] = counts.get(fid, 0) + 1
+            counts[fid] = counts.get(fid, 0) + 1
     return counts
 
 
@@ -254,52 +216,40 @@ def build_function_context(
     input_hash: str,
 ) -> dict[str, Any]:
     """Build bounded, function-scoped AI input evidence for one function."""
-    func = next((f for f in normalized.get("functions", []) if f["id"] == fid), None)
-    if func is None:
-        raise SummarizerError(f"Function {fid} not found in normalized analysis.")
+    function = next(
+        (f for f in normalized.get("functions", []) if f["id"] == fid), None
+    )
+    if function is None:
+        raise ValueError(f"Function {fid} not found in analysis.")
 
-    rule_hits = [
-        hit
-        for hit in normalized.get("rule_hits", [])
-        if fid in hit.get("function_ids", [])
-    ]
+    decomp = function.get("decompiled_excerpt") or ""
+    assembly = function.get("assembly_excerpt") or ""
 
-    imports = _relevant_imports(normalized, fid)
-    strings = _relevant_strings(normalized, fid)
-
-    # Bounded decompilation: drop assembly first (already omitted here), then
-    # trim the decompilation tail to stay under the character ceiling.
-    decomp = func.get("decompiled_excerpt") or ""
-    context_text = decomp
-    if len(context_text) > FUNC_MAX_CHARS:
-        context_text = context_text[:FUNC_MAX_CHARS]
-
-    evidence_ids = _evidence_ids_for_function(normalized, fid)
+    context_chars = len(decomp) + len(assembly)
+    max_decomp_chars = FUNC_MAX_CHARS
+    if context_chars > max_decomp_chars:
+        # Drop assembly first, then decompilation tail.
+        assembly = ""
+        decomp = decomp[:max_decomp_chars]
 
     return {
         "analysis_id": analysis_id,
         "input_hash": input_hash,
         "function": {
-            "id": func["id"],
-            "address": func.get("address"),
-            "name": func.get("name"),
-            "signature": func.get("signature"),
-            "size": func.get("size"),
-            "decompiler_status": func.get("decompiler_status"),
+            "id": function["id"],
+            "address": function.get("address", ""),
+            "name": function.get("name", ""),
+            "signature": function.get("signature", ""),
+            "size": function.get("size", 0),
+            "decompiler_status": function.get("decompiler_status", ""),
+            "centrality": function.get("centrality", 0.0),
         },
-        "rule_hits": [
-            {
-                "rule_id": hit.get("rule_id"),
-                "weight": hit.get("weight"),
-                "evidence_refs": hit.get("evidence_refs", []),
-                "absorbed": hit.get("absorbed"),
-            }
-            for hit in rule_hits
-        ],
-        "imports": imports,
-        "strings": strings,
-        "evidence_ids": sorted(evidence_ids),
-        "decompilation_excerpt": context_text,
+        "decompilation_excerpt": decomp,
+        "assembly_excerpt": assembly,
+        "rule_hits": _relevant_imports(normalized, fid),
+        "imports": _relevant_imports(normalized, fid),
+        "strings": _relevant_strings(normalized, fid),
+        "evidence_ids": sorted(_evidence_ids_for_function(normalized, fid)),
     }
 
 
@@ -324,6 +274,40 @@ class Stage1Summarizer:
         self.tokens_used = 0
         self.requests_used = 0
         self.calls_log: list[dict[str, Any]] = []
+        self.request_times: list[float] = []
+        self.tokens_per_minute: list[tuple[float, int]] = []
+
+    def _check_rate_limits(self, est_tokens: int) -> None:
+        """Enforce LLM_RPM and LLM_TPM_LIMIT before a call.
+
+        Raises AIProviderError if the call would exceed either per-minute limit.
+        """
+        now = time.monotonic()
+        window = 60.0
+
+        # Prune old entries.
+        self.request_times = [t for t in self.request_times if now - t < window]
+        self.tokens_per_minute = [
+            (t, tokens)
+            for t, tokens in self.tokens_per_minute
+            if now - t < window
+        ]
+
+        if len(self.request_times) >= LLM_RPM:
+            raise AIProviderError(
+                f"LLM rate limit exceeded ({LLM_RPM} requests/minute)."
+            )
+
+        minute_tokens = sum(tokens for _, tokens in self.tokens_per_minute)
+        if minute_tokens + est_tokens > LLM_TPM_LIMIT:
+            raise AIProviderError(
+                f"LLM token rate limit exceeded ({LLM_TPM_LIMIT} tokens/minute)."
+            )
+
+    def _record_call(self, est_tokens: int) -> None:
+        now = time.monotonic()
+        self.request_times.append(now)
+        self.tokens_per_minute.append((now, est_tokens))
 
     def summarize_analysis(
         self,
@@ -379,6 +363,18 @@ class Stage1Summarizer:
             )
             results[fid] = summary
         return results
+
+    def summarize_function(
+        self, normalized: dict, function_id: str
+    ) -> dict[str, Any] | None:
+        """Summarize exactly one requested function for an explicit user action."""
+        if not any(row.get("id") == function_id for row in normalized.get("functions", [])):
+            raise ValueError("Function does not belong to this analysis.")
+        analysis_id = normalized["analysis_id"]
+        input_hash = normalized.get("provenance", {}).get("input_hash", "")
+        return self._summarize_one(
+            normalized, function_id, analysis_id, input_hash, False
+        )
 
     def _summarize_one(
         self,
@@ -439,9 +435,7 @@ class Stage1Summarizer:
     ) -> dict[str, Any] | None:
         system_prompt = prompt["system"]
         template = prompt["user_template"]
-        rendered_context = json.dumps(
-            context, ensure_ascii=True, separators=(",", ":")
-        )
+        rendered_context = json.dumps(context, ensure_ascii=True, separators=(",", ":"))
         function = context["function"]
         last_error = ""
         for attempt in range(self.max_repairs + 1):
@@ -459,6 +453,12 @@ class Stage1Summarizer:
                 strings=json.dumps(context["strings"], ensure_ascii=True),
                 evidence=rendered_context,
             )
+            est_tokens = len(rendered_context) // 4
+            try:
+                self._check_rate_limits(est_tokens)
+            except AIProviderError as exc:
+                last_error = str(exc)
+                return None
             try:
                 raw = self.provider.generate_structured(
                     system_prompt=system_prompt,
@@ -472,7 +472,10 @@ class Stage1Summarizer:
                 return None
             except AIProviderError as exc:
                 last_error = str(exc)
-                if "429" in str(exc) and self.tokens_used < MAX_OUTPUT_TOKENS_PER_ANALYSIS:
+                if (
+                    "429" in str(exc)
+                    and self.tokens_used < MAX_OUTPUT_TOKENS_PER_ANALYSIS
+                ):
                     continue
                 return None
             except (ValueError, KeyError, TypeError) as exc:
@@ -491,6 +494,7 @@ class Stage1Summarizer:
             est_tokens = len(rendered_context) // 4 + len(json.dumps(raw)) // 4
             self.tokens_used += est_tokens
             self.requests_used += 1
+            self._record_call(est_tokens)
             self.calls_log.append(
                 {
                     "function_id": fid,

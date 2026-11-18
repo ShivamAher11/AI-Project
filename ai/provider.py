@@ -2,6 +2,9 @@
 
 The endpoint is configured only through environment variables. The worker never
 imports this module or makes outbound LLM requests.
+
+Local providers (localhost/127.0.0.1/::1) run without cloud consent. Remote
+providers require deployment-level consent via CONSENT_CLOUD_LLM=true.
 """
 
 from __future__ import annotations
@@ -56,14 +59,16 @@ class LLMConfig:
     consent: bool
     allowed_hosts: tuple[str, ...]
     timeout_s: float = 30.0
+    reasoning_effort: str | None = None
     max_retries: int = 2
     tunnel_username: str | None = None
     tunnel_password: str | None = None
+
     @classmethod
     def from_env(cls) -> "LLMConfig":
         allowed = os.getenv(
             "LLM_ALLOWED_HOSTS",
-            "studio-unmapped-vicinity.ngrok-free.dev,api.openai.com",
+            "studio-unmapped-vicinity.ngrok-free.dev",
         )
         return cls(
             api_key=os.getenv("LLM_API_KEY", "").strip(),
@@ -79,6 +84,7 @@ class LLMConfig:
                 if host.strip()
             ),
             timeout_s=_positive_float(os.getenv("LLM_TIMEOUT_S"), 30.0, 1.0, 120.0),
+            reasoning_effort=os.getenv("LLM_REASONING_EFFORT", "").strip() or None,
             max_retries=_bounded_int(os.getenv("LLM_MAX_RETRIES"), 2, 0, 4),
             tunnel_username=os.getenv("LLM_TUNNEL_USERNAME", "").strip() or None,
             tunnel_password=os.getenv("LLM_TUNNEL_PASSWORD", "").strip() or None,
@@ -90,6 +96,11 @@ class LLMConfig:
             return urlsplit(self.base_url).hostname
         except ValueError:
             return None
+
+    @property
+    def is_local(self) -> bool:
+        host = (self.endpoint_host or "").lower().rstrip(".")
+        return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local")
 
     def validate_endpoint(self) -> None:
         try:
@@ -109,11 +120,14 @@ class LLMConfig:
             raise AIConfigurationError(
                 "LLM_BASE_URL hostname is not in LLM_ALLOWED_HOSTS. Add the exact hostname to that setting."
             )
-        if parsed.scheme != "https" and host not in {"localhost", "127.0.0.1", "::1"}:
+        if parsed.scheme != "https" and not self.is_local:
             raise AIConfigurationError("Non-local AI endpoints must use HTTPS.")
 
     def disabled_reason(self) -> str | None:
-        if not self.consent:
+        # Cloud consent is only required for remote endpoints. Local providers
+        # (localhost/127.0.0.1/::1/.local) run without cloud consent per SPEC
+        # Amendment 1.5 and the AI Member2 guide.
+        if not self.is_local and not self.consent:
             return "CONSENT_CLOUD_LLM is not true."
         if not self.api_key:
             return "LLM_API_KEY is missing."
@@ -151,8 +165,8 @@ class LLMProvider:
             "model": self.config.model or None,
             "endpoint_host": host,
             "reason": reason,
+            "local": self.config.is_local,
         }
-
     def complete(
         self,
         messages: list[dict[str, str]],
@@ -160,6 +174,7 @@ class LLMProvider:
         max_tokens: int = 900,
         temperature: float = 0.0,
         response_format: dict[str, Any] | None = None,
+        reasoning_effort: str | None = None,
     ) -> str:
         reason = self.config.disabled_reason()
         if reason is not None:
@@ -174,6 +189,10 @@ class LLMProvider:
             "max_tokens": max(1, min(4096, int(max_tokens))),
             "stream": False,
         }
+        if reasoning_effort is None:
+            reasoning_effort = self.config.reasoning_effort
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
         if response_format is not None:
             payload["response_format"] = response_format
         url = f"{base_url}/chat/completions"
@@ -187,7 +206,9 @@ class LLMProvider:
         headers["Authorization"] = f"Bearer {self.config.api_key}"
         if self.config.tunnel_username and self.config.tunnel_password:
             credentials = base64.b64encode(
-                f"{self.config.tunnel_username}:{self.config.tunnel_password}".encode("utf-8")
+                f"{self.config.tunnel_username}:{self.config.tunnel_password}".encode(
+                    "utf-8"
+                )
             ).decode("ascii")
             headers["Proxy-Authorization"] = f"Basic {credentials}"
         for attempt in range(self.config.max_retries + 1):
@@ -230,6 +251,7 @@ class LLMProvider:
                 raise AIProviderError("AI endpoint could not be reached.") from exc
         raise AIProviderError("AI endpoint could not complete the request.")
 
+
     def generate_text(
         self,
         *,
@@ -266,6 +288,8 @@ class LLMProvider:
         return json.loads(content)
 
 
+
+
 class MockProvider:
     """Deterministic in-process provider substitute for unit tests.
 
@@ -278,7 +302,14 @@ class MockProvider:
         self.responses = list(responses or [])
         self.calls: list[dict[str, Any]] = []
 
-    def generate_text(self, *, system_prompt: str, user_prompt: str, max_tokens: int = 900, response_format: dict[str, Any] | None = None) -> str:
+    def generate_text(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 900,
+        response_format: dict[str, Any] | None = None,
+    ) -> str:
         self.calls.append(
             {
                 "system_prompt": system_prompt,
@@ -294,7 +325,14 @@ class MockProvider:
             raise response
         return response
 
-    def generate_structured(self, *, system_prompt: str, user_prompt: str, max_tokens: int = 900, response_format: dict[str, Any] | None = None) -> Any:
+    def generate_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 900,
+        response_format: dict[str, Any] | None = None,
+    ) -> Any:
         """Return one parsed JSON object from a bounded completion."""
         content = self.generate_text(
             system_prompt=system_prompt,
@@ -303,4 +341,3 @@ class MockProvider:
             response_format=response_format,
         )
         return json.loads(content)
-

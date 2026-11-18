@@ -175,6 +175,40 @@ paths:
                   ai_report:
                     type: object
                     nullable: true
+                    properties:
+                      schema_version:
+                        type: string
+                      verdict:
+                        type: string
+                        enum: [LIKELY_MALICIOUS, LIKELY_BENIGN, INCONCLUSIVE]
+                      summary:
+                        type: string
+                      evidence_ids:
+                        type: array
+                        items:
+                          type: string
+                      rationale:
+                        type: string
+                      uncertainty:
+                        type: string
+                      limitations:
+                        type: array
+                        items:
+                          type: string
+                      disclaimer:
+                        type: string
+                      generated_at:
+                        type: string
+                      model:
+                        type: string
+                      input_sha256:
+                        type: string
+                      stages:
+                        type: object
+                      tokens_used:
+                        type: integer
+                      tool_calls:
+                        type: integer
                   prior_ids:
                     type: array
                     items:
@@ -336,6 +370,99 @@ paths:
           description: AI disabled
         '502':
           description: Provider unavailable
+  /ai/analyses/{analysis_id}/functions/{function_id}/summary:
+    post:
+      summary: Ask AI for one function summary
+      description: Generate and persist one function summary after an explicit user action. No other functions are summarized by this request.
+      parameters:
+        - in: path
+          name: analysis_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: function_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Validated function summary
+        '404':
+          description: Analysis or function not found
+        '409':
+          description: Static analysis is still running
+        '502':
+          description: Model could not produce a validated summary
+  /ai/internal/analyses/{analysis_id}/tool:
+    post:
+      summary: Execute one allow-listed static-analysis tool
+      description: |
+        API-mediated static tool execution for the bounded AI pipeline.
+        Only the worker with the pipeline token may invoke it. Tools read
+        persisted bounded static evidence; raw file bytes and paths are never
+        exposed.
+      parameters:
+        - in: path
+          name: analysis_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: ["tool"]
+              properties:
+                tool:
+                  type: string
+                  enum:
+                    - analysis.metadata
+                    - analysis.strings
+                    - analysis.functions
+                    - analysis.function_detail
+                    - analysis.findings
+                    - analysis.imports
+                  description: One of the allow-listed static-analysis tools.
+                arguments:
+                  type: object
+                  description: Tool-specific validated arguments.
+      responses:
+        '200':
+          description: Tool result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analysis_id:
+                    type: string
+                    format: uuid
+                  tool:
+                    type: string
+                  budget:
+                    type: object
+                    properties:
+                      calls:
+                        type: integer
+                      calls_remaining:
+                        type: integer
+                      output_bytes:
+                        type: integer
+                  result:
+                    type: object
+        '400':
+          description: Unknown tool or invalid argument
+        '403':
+          description: Pipeline authorization failed
+        '404':
+          description: Analysis or referenced item not found
+        '429':
+          description: Tool budget exceeded
 components:
   schemas:
     Error:

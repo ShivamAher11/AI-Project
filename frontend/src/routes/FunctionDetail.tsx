@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { getFunctionDetail, type FunctionDetailView, type AiSummaryView } from "../lib/api";
+import { getFunctionDetail, requestFunctionSummary, USE_FIXTURES, type FunctionDetailView, type AiSummaryView } from "../lib/api";
 import { SeverityBadge } from "../components/RiskBreakdown";
-
+import { Markdown } from "../components/Markdown";
 function LoadingSkeleton() {
   return <div className="skeleton-stack" aria-label="Loading function detail" aria-busy="true">
     <div className="skeleton skeleton-title" /><div className="skeleton skeleton-meta" />
@@ -22,6 +22,8 @@ export function FunctionDetailPage({ analysisId, fid, navigate }: { analysisId: 
   const [detail, setDetail] = useState<FunctionDetailView | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -39,6 +41,19 @@ export function FunctionDetailPage({ analysisId, fid, navigate }: { analysisId: 
 
   const summary = detail.ai_summary;
   const hasSummary = summary !== null && summary !== undefined;
+
+  async function askAi() {
+    setAiBusy(true);
+    setAiError("");
+    try {
+      const result = await requestFunctionSummary(analysisId, fid);
+      setDetail((current) => current ? { ...current, ai_summary: result } : current);
+    } catch (reason: unknown) {
+      setAiError(reason instanceof Error ? reason.message : "Could not summarize this function.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   return <div className="function-detail-page">
     <div className="page-heading">
@@ -79,17 +94,22 @@ export function FunctionDetailPage({ analysisId, fid, navigate }: { analysisId: 
           <h2>AI-generated summary</h2>
           <p className="ai-help">Model-generated interpretation of selected static evidence. Deterministic findings and risk are unchanged.</p>
         </div>
+        <button className="button button-primary" type="button" disabled={USE_FIXTURES || aiBusy} onClick={() => { void askAi(); }}>
+          {aiBusy ? "Asking AI…" : "Ask AI"}
+        </button>
       </div>
-      {!hasSummary && <div className="empty-state"><span className="empty-icon" aria-hidden="true">—</span><strong>No AI summary available for this function.</strong><span>The function may not have been selected for summarization, or AI was disabled.</span></div>}
+      {USE_FIXTURES && <p className="ai-help">Switch to the live API build to ask AI about this function.</p>}
+      {aiError && <p className="ai-error" role="alert">{aiError}</p>}
+      {!hasSummary && <div className="empty-state"><span className="empty-icon" aria-hidden="true">—</span><strong>No AI summary available for this function.</strong><span>Choose Ask AI to request a summary for this function.</span></div>}
       {hasSummary && (
         <>
-          <div className="ai-block"><span className="section-label">PURPOSE</span><p>{summary.purpose}</p></div>
+          <div className="ai-block"><span className="section-label">PURPOSE</span><Markdown text={summary.purpose} /></div>
           <div className="ai-block"><span className="section-label">BEHAVIOR</span>{renderBehaviorList(summary.behavior)}</div>
-          {summary.suspicious_indicators.length > 0 && <div className="ai-block"><span className="section-label">SUSPICIOUS INDICATORS</span><p>{summary.suspicious_indicators.join("; ")}</p></div>}
-          <div className="ai-block"><span className="section-label">ALTERNATIVE EXPLANATION</span><p>{summary.alternative_explanation}</p></div>
-          <div className="ai-block"><span className="section-label">UNCERTAINTY</span><p>{summary.uncertainty}</p></div>
-          <div className="ai-block"><span className="section-label">RATIONALE</span><p>{summary.rationale}</p></div>
-          {summary.suggested_technique_id && <div className="ai-block"><span className="section-label">SUGGESTED ATT&CK</span><p>{summary.suggested_technique_id}</p></div>}
+          {summary.suspicious_indicators.length > 0 && <div className="ai-block"><span className="section-label">SUSPICIOUS INDICATORS</span><Markdown text={summary.suspicious_indicators.join("; ")} /></div>}
+          <div className="ai-block"><span className="section-label">ALTERNATIVE EXPLANATION</span><Markdown text={summary.alternative_explanation} /></div>
+          <div className="ai-block"><span className="section-label">UNCERTAINTY</span><Markdown text={summary.uncertainty} /></div>
+          <div className="ai-block"><span className="section-label">RATIONALE</span><Markdown text={summary.rationale} /></div>
+          {summary.suggested_technique_id && <div className="ai-block"><span className="section-label">SUGGESTED ATT&CK</span><Markdown text={summary.suggested_technique_id} /></div>}
           <div className="evidence-row"><span className="section-label">EVIDENCE REFERENCES</span><div className="evidence-chips">
             {summary.evidence_ids.map((evidenceId, index) => <button key={index} className="evidence-chip">{`E${index + 1}:${evidenceId}`}</button>)}
           </div></div>

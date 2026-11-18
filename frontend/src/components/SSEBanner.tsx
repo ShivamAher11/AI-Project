@@ -7,7 +7,7 @@ export function SSEBanner({ status, connected, lastEvent, source }: {
   const messages: Array<{ kind: string; text: string }> = [];
   if (status.status === "PARTIAL" && status.decomp_status === "TIMEOUT") messages.push({ kind: "warning", text: "Partial — decomp TIMEOUT, static available" });
   else if (status.status === "PARTIAL") messages.push({ kind: "warning", text: "Partial — static results are available; some analysis stages did not run." });
-  if (["COMPLETED", "PARTIAL"].includes(status.status) && ["DISABLED", "DEGRADED", "NOT_RUN", "FAILED"].includes(status.ai_status)) messages.push({ kind: "neutral", text: "Pipeline AI stage did not complete; on-demand explanation may still be available" });
+  if (["COMPLETED", "PARTIAL"].includes(status.status) && ["DISABLED", "DEGRADED", "NOT_RUN", "FAILED"].includes(status.ai_status)) messages.push({ kind: "neutral", text: status.error?.message ? `Automatic AI assessment did not complete: ${status.error.message}` : "Automatic AI assessment did not complete; deterministic findings remain available." });
   if (source === "fixture") messages.push({ kind: "fixture", text: "Source: fixture" });
 
   return <section className="live-panel" aria-live="polite" aria-label="Live analysis progress">

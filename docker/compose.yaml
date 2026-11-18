@@ -25,21 +25,8 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://app:app-local-password@postgres:5432/analysis}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
-      DATA_ROOT: ${DATA_ROOT:-/data}
-      MAX_FILE_MB: ${MAX_FILE_MB:-100}
-      TTL_HOURS: ${TTL_HOURS:-24}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5-codebase}
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://studio-unmapped-vicinity.ngrok-free.dev/v1}
-      CONSENT_CLOUD_LLM: ${CONSENT_CLOUD_LLM:-false}
-      LLM_ALLOWED_HOSTS: ${LLM_ALLOWED_HOSTS:-studio-unmapped-vicinity.ngrok-free.dev,api.openai.com}
-      LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-30}
-      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
-      PIPELINE_AI_INTERNAL_TOKEN: ${PIPELINE_AI_INTERNAL_TOKEN:-}
+    env_file:
+      - ../.env
     ports:
       - "8000:8000"
     volumes:

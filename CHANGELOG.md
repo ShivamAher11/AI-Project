@@ -1,3 +1,38 @@
+## 2026-11-18 — Automatic report enrichment and grounded evidence
+
+- Fixed report context reconstruction to include deterministic finding descriptions, interpretations, alternatives, and the import/string/function evidence refs tied to each finding. The prior context dropped those fields, so the model saw a finding ID and score without the supporting explanation.
+- Bumped report prompt/cache version to 1.5 so reports created from incomplete finding context cannot be reused; the prompt now checks each rule hypothesis against its linked evidence and reports unsupported behavior accurately.
+- Normalized a scalar `limitations` response to the schema-required one-item array without another model call; other invalid output still fails grounding validation.
+- Recover omitted report `evidence_ids` only from exact current-analysis IDs cited in model text; missing citations still cannot support likely verdicts.
+- Preserved bounded API validation/provider error messages in worker analysis status instead of replacing them with a generic AI failure message.
+- Changed report synthesis prompt to include cited import, string, and function observations, require claim-specific evidence references, and specify exact JSON types.
+- Fixed API pipeline reconstruction to read persisted signal IDs from the model's `id` field; the previous `signal_id` attribute lookup raised before any LLM stage ran.
+- Fixed report validation to allow the required assessment `verdict`; automatic report synthesis now sends one provider request and leaves `ai_report` empty when validation fails.
+- Changed the worker pipeline to one automatic report-synthesis request. Individual function summaries now run only from a requested function-level action; report prompt/cache version is 1.5.
+- Intentional deviation from `docs/SPEC.md` §§1, 26–27: automatic function summaries and correlation calls are omitted to avoid up to 50 sequential requests; the automatic report uses one synthesis request, while function summaries require the user's Ask AI action.
+- Kept the pipeline route synchronous so the single provider request runs in FastAPI's thread pool without blocking health checks or status requests.
+- Removed the manual Overview explanation and Report enrichment controls. Both pages now consume the persisted pipeline assessment, and the report refreshes when the analysis reaches a terminal state.
+- Kept deterministic findings and risk authoritative; AI failure remains a degraded/partial analysis.
+
+## 2026-11-17 — Phase 5: automatic AI pipeline acceptance and security hardening
+
+- Removed committed secret `LLM_API_KEY` from `.env`; `.env.example` now defaults `CONSENT_CLOUD_LLM=false`.
+- Fixed `ai/provider.py`: local providers (`localhost`/`127.0.0.1`/`::1`/`.local`) run without cloud consent; remote providers require `CONSENT_CLOUD_LLM=true`. Removed `api.openai.com` from default `LLM_ALLOWED_HOSTS`.
+- Fixed `docker/compose.yaml`: removed `api.openai.com` from default `LLM_ALLOWED_HOSTS`.
+- Enforced `LLM_RPM` and `LLM_TPM_LIMIT` rate limits in `ai/summarizer.py` and `ai/assessor.py` (per-minute request and token guards).
+- Verified upload bytes and file paths never appear in provider requests, logs, or AI run metadata (only bounded snippets + input hash SHA-256).
+- Provider failure, disabled provider, and rate-limit exhaustion preserve deterministic output and mark analysis `PARTIAL`/`DEGRADED` honestly.
+
+## 2026-11-17 — Phase 4: persist and expose AI assessment through API and UI
+
+- Added `frontend/src/lib/api.ts` `AiAssessmentView` type and changed `OverviewView.aiReport` to `AiAssessmentView | null`.
+- Updated `frontend/src/routes/Overview.tsx` to render the AI assessment panel: verdict badge, summary, rationale, uncertainty, limitations, evidence reference chips, and model/provenance metadata.
+- Updated `frontend/src/routes/Report.tsx` to include the AI assessment (verdict, summary, rationale, uncertainty, limitations, evidence references, disclaimer) in the Markdown report output.
+- Updated `shared/openapi.yaml` to document the `ai_report` assessment structure on `/analyses/{id}/overview` (verdict enum, evidence_ids, rationale, uncertainty, limitations, model, input_sha256, stages, tokens_used, tool_calls).
+- Added `tests/unit/test_ai_pipeline.py` Phase 4 tests: all three verdict labels, evidence grounding to current analysis, cross-analysis evidence rejection, missing AI → partial state, partial analysis keeps deterministic findings, deterministic risk not modified by assessment, required assessment contract fields.
+- No new top-level routes or settings pages added; assessment exposed through existing overview, function detail, and report routes.
+- Deterministic findings, score, severity, confidence, and ATT&CK results unchanged and visible.
+
 ## 2026-10-29 — ngrok Ollama agent patch
 
 - Filled the existing `ai/provider.py` seam with a bounded OpenAI-compatible HTTP client configured for `qwen2.5-codebase` and the supplied ngrok endpoint.
@@ -17,9 +52,36 @@
 - `backend/app/api/v1/ai.py` new internal Stage 1 endpoint; `backend/app/api/v1/analyses.py` function detail returns `ai_summary`.
 - Models: `Function.ai_summary_json`, `AIRun.function_id` with FK + index.
 - No test needs a live model; all AI tests use MockProvider. FastAPI/Postgres-backed tests run under Docker Compose per README.
-# Changelog
 
-Intentional deviations from `docs/SPEC.md` are recorded here. Newest entries first.
+## 2026-11-17 — Phase 3: full AI pipeline with evidence-based assessment
+
+- Added `ai/schemas/report_assessment_v1_0.json` and `ai/schemas/correlation_v1_0.json` strict schemas for Stage 2 (correlation) and Stage 3 (report assessment) outputs.
+- Added `ai/prompts_v1.0/correlate.json` and `ai/prompts_v1.0/report.json` v1.0 prompts with `<<<BEGIN_UNTRUSTED_STATIC_EVIDENCE_JSON>>>` delimiters (SPEC §§27, 29).
+- Added `ai/assessor.py` `ReportAssessor`: Stage 2 behavior correlation + Stage 3 report synthesis producing one evidence-based assessment (`LIKELY_MALICIOUS` / `LIKELY_BENIGN` / `INCONCLUSIVE`). Likely verdicts require ≥1 valid evidence ID; INCONCLUSIVE otherwise.
+- Extended `backend/app/api/v1/ai.py` `POST /internal/analyses/{id}/pipeline` to run all 3 stages (func summaries → correlate → report) with budget tracking (52 calls, 60k output tokens) and cache invalidation across prompt/schema versions.
+- `worker/tasks.py` AI_ANALYSIS stage now calls the full pipeline endpoint; AI failure preserves deterministic results and marks analysis PARTIAL/DEGRADED honestly.
+- Added `ai/schemas/validate.py` validators for correlation and assessment outputs, rejecting unknown fields, invented IDs, and AI-authored score/severity/confidence fields.
+- Bumped prompt/output schema versions to 1.0 for correlate and report stages; cache keys include model + prompt version + schema version + input hash.
+- Added `tests/unit/test_ai_pipeline.py` covering all verdict labels, evidence grounding, prompt injection, invalid output/repair limits, cache invalidation, provider failure, tool budget, and deterministic risk invariance.
+
+## 2026-11-17 — Phase 2: bounded static-analysis tool allowlist
+
+- Added `ai/tools.py`: a small typed allowlist of static-analysis tools
+  (analysis.metadata, analysis.strings, analysis.functions,
+  analysis.function_detail, analysis.findings, analysis.imports) that run only
+  in the API process against persisted PostgreSQL evidence. Raw file bytes,
+  upload paths, shell, network, and arbitrary SQL are never exposed.
+- Added API endpoint `POST /ai/internal/analyses/{id}/tool` (pipeline-token
+  authorized) that mediates every tool call. Unknown tools/arguments are
+  rejected; unknown IDs return 404; budget exhaustion returns 429.
+- Each tool call counts against SPEC §49 ceilings (52 calls, 60k output
+  tokens) via `ToolBudget`; output is bounded per call.
+- Extended `shared/openapi.yaml` with the tool endpoint and its error
+  responses.
+- Added `tests/unit/test_ai_tools.py` covering allowlist contents, argument
+  validation, unknown tool/argument rejection, budget exhaustion, unknown
+  analysis/function IDs, pipeline-token authorization, and a valid metadata
+  call.
 
 ## 2026-11-17 — Approved AI-centered analysis direction
 

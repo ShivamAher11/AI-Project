@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/ai/report-assessment-v1.0.json",
+  "title": "AI report assessment v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "verdict", "summary", "evidence_ids", "rationale", "uncertainty", "limitations"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "verdict": {
+      "type": "string",
+      "enum": ["LIKELY_MALICIOUS", "LIKELY_BENIGN", "INCONCLUSIVE"]
+    },
+    "summary": {"type": "string", "maxLength": 3000},
+    "evidence_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "maxItems": 100
+    },
+    "rationale": {"type": "string", "maxLength": 2000},
+    "uncertainty": {"type": "string", "maxLength": 1000},
+    "limitations": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 500},
+      "maxItems": 20
+    }
+  }
+}

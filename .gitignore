@@ -11,6 +11,12 @@ evaluation/**/*.so
 node_modules/
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
 .venv/
 venv/
 docs/*.docx

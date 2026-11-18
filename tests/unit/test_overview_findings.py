@@ -14,13 +14,14 @@ def test_overview_findings_scores_and_404():
         assert client.get("/health").status_code == 200
     created = []
     with new_session() as session:
-        for name, score, group, title, technique in [
+        for name, score, group, title, technique, source in [
             (
                 "persist_reg.exe",
                 18,
                 "G_REG_PERSIST",
                 "Registry Run-key persistence",
                 "T1547.001",
+                "fixture",
             ),
             (
                 "inject_pattern.exe",
@@ -28,6 +29,7 @@ def test_overview_findings_scores_and_404():
                 "G_INJECTION",
                 "Possible process injection",
                 "T1055",
+                "none",
             ),
         ]:
             analysis_id = uuid.uuid4()
@@ -57,7 +59,7 @@ def test_overview_findings_scores_and_404():
                 schema_version="1.0",
                 decomp_status="OK",
                 ai_status="NOT_RUN",
-                ghidra_source="fixture",
+                ghidra_source=source,
             )
             finding = Finding(
                 analysis_id=analysis_id,
@@ -104,10 +106,13 @@ def test_overview_findings_scores_and_404():
 
     try:
         with TestClient(app) as client:
-            for analysis_id, expected in zip(created, (18, 28)):
+            for analysis_id, expected, source in zip(
+                created, (18, 28), ("fixture", "none")
+            ):
                 overview = client.get(f"/api/v1/analyses/{analysis_id}/overview")
                 assert overview.status_code == 200
                 assert overview.json()["risk"]["score"] == expected
+                assert overview.json()["states"]["source"] == source
                 assert len(overview.json()["top_findings"]) == 1
                 findings = client.get(f"/api/v1/analyses/{analysis_id}/findings")
                 assert findings.status_code == 200

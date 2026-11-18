@@ -39,7 +39,9 @@ class GhidraRunner:
         configured_headless = headless_path or os.getenv("GHIDRA_HEADLESS_PATH")
         self.headless_path = Path(configured_headless) if configured_headless else None
         self.timeout_seconds = (
-            timeout_seconds if timeout_seconds is not None else int(os.getenv("GHIDRA_TIMEOUT_SECONDS", "900"))
+            timeout_seconds
+            if timeout_seconds is not None
+            else int(os.getenv("GHIDRA_TIMEOUT_SECONDS", "900"))
         )
 
     def run(
@@ -56,12 +58,16 @@ class GhidraRunner:
         if self.mode != "real":
             raise ValueError("GHIDRA_MODE must be fixture or real")
         if binary_path is None or work_dir is None:
-            raise GhidraExecutionError("Real Ghidra mode requires an input binary and analysis work directory.")
+            raise GhidraExecutionError(
+                "Real Ghidra mode requires an input binary and analysis work directory."
+            )
 
         binary_path = Path(binary_path).resolve()
         work_dir = Path(work_dir).resolve()
         if not binary_path.is_file():
-            raise GhidraExecutionError("The uploaded binary is unavailable for Ghidra analysis.")
+            raise GhidraExecutionError(
+                "The uploaded binary is unavailable for Ghidra analysis."
+            )
         if self.timeout_seconds <= 0:
             raise ValueError("GHIDRA_TIMEOUT_SECONDS must be a positive integer")
 
@@ -72,47 +78,78 @@ class GhidraRunner:
 
         work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         try:
-            with tempfile.TemporaryDirectory(prefix="ghidra-", dir=work_dir) as temporary:
+            with tempfile.TemporaryDirectory(
+                prefix="ghidra-", dir=work_dir
+            ) as temporary:
                 temp_dir = Path(temporary)
                 project_dir = temp_dir / "project"
                 project_dir.mkdir()
                 output_path = temp_dir / "ghidra-output.json"
+                stdout_path = temp_dir / "ghidra.stdout.log"
+                stderr_path = temp_dir / "ghidra.stderr.log"
                 command = [
-                    str(headless), str(project_dir), f"analysis_{analysis_uuid.hex}",
-                    "-import", str(binary_path),
-                    "-scriptPath", str(scripts_dir),
-                    "-postScript", "Export.java", str(output_path),
+                    str(headless),
+                    str(project_dir),
+                    f"analysis_{analysis_uuid.hex}",
+                    "-import",
+                    str(binary_path),
+                    "-scriptPath",
+                    str(scripts_dir),
+                    "-postScript",
+                    "Export.java",
+                    str(output_path),
                     "-deleteProject",
                 ]
                 try:
-                    completed = subprocess.run(
-                        command,
-                        check=False,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=self.timeout_seconds,
-                        cwd=temp_dir,
-                        env=os.environ.copy(),
-                    )
+                    with stdout_path.open("wb") as stdout_log, stderr_path.open(
+                        "wb"
+                    ) as stderr_log:
+                        completed = subprocess.run(
+                            command,
+                            check=False,
+                            stdout=stdout_log,
+                            stderr=stderr_log,
+                            timeout=self.timeout_seconds,
+                            cwd=temp_dir,
+                            env=os.environ.copy(),
+                        )
                 except subprocess.TimeoutExpired:
                     return self._empty_result("TIMEOUT")
                 if completed.returncode != 0:
                     raise GhidraExecutionError(
-                        f"Ghidra headless analysis exited with status {completed.returncode}."
+                        self._failure_message(
+                            f"Ghidra headless analysis exited with status {completed.returncode}.",
+                            stdout_path,
+                            stderr_path,
+                        )
                     )
                 if not output_path.is_file():
-                    raise GhidraExecutionError("Ghidra completed without producing its JSON export.")
+                    raise GhidraExecutionError(
+                        self._failure_message(
+                            "Ghidra completed without producing its JSON export.",
+                            stdout_path,
+                            stderr_path,
+                        )
+                    )
                 try:
                     exported = json.loads(output_path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError) as exc:
-                    raise GhidraExecutionError("Ghidra produced an invalid JSON export.") from exc
+                    raise GhidraExecutionError(
+                        "Ghidra produced an invalid JSON export."
+                    ) from exc
         except OSError as exc:
-            raise GhidraExecutionError("Could not run the Ghidra headless analyzer.") from exc
+            raise GhidraExecutionError(
+                "Could not run the Ghidra headless analyzer."
+            ) from exc
 
-        if not isinstance(exported, dict) or not isinstance(exported.get("functions"), list) or not isinstance(
-            exported.get("edges"), list
+        if (
+            not isinstance(exported, dict)
+            or not isinstance(exported.get("functions"), list)
+            or not isinstance(exported.get("edges"), list)
         ):
-            raise GhidraExecutionError("Ghidra JSON export is missing functions or edges.")
+            raise GhidraExecutionError(
+                "Ghidra JSON export is missing functions or edges."
+            )
         return {
             "source": "real",
             "decomp_status": "OK",
@@ -166,6 +203,26 @@ class GhidraRunner:
             "ghidra": os.getenv("GHIDRA_VERSION", "unknown"),
             "jdk": os.getenv("JAVA_VERSION", "unknown"),
         }
+
+    @staticmethod
+    def _failure_message(message: str, stdout_path: Path, stderr_path: Path) -> str:
+        """Attach bounded headless diagnostics to failures without buffering all output."""
+        diagnostic_limit = 4000
+        diagnostics = []
+        for label, path in (("stderr", stderr_path), ("stdout", stdout_path)):
+            try:
+                with path.open("rb") as stream:
+                    stream.seek(0, os.SEEK_END)
+                    size = stream.tell()
+                    stream.seek(max(0, size - diagnostic_limit))
+                    tail = stream.read(diagnostic_limit).decode("utf-8", errors="replace").strip()
+            except OSError:
+                continue
+            if tail:
+                diagnostics.append(f"{label} tail:\n{tail}")
+        if not diagnostics:
+            return message
+        return f"{message} Ghidra diagnostics (last {diagnostic_limit} bytes per stream):\n" + "\n".join(diagnostics)
 
     def _empty_result(self, status: str) -> dict:
         return {

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import pytest
 
-from worker.ghidra_runner import GhidraRunner
+from worker.ghidra_runner import GhidraExecutionError, GhidraRunner
 from worker.normalize import (
     calculate_centrality,
     normalize_analysis,
@@ -60,7 +60,9 @@ def test_pagerank_uses_only_direct_edges_and_normalizes():
 
 
 def test_fixture_runner_normalizes_and_roundtrips_deterministically(tmp_path):
-    result = GhidraRunner(mode="fixture", fixture_root=ROOT / "fixtures").run(ANALYSIS_ID, "hello_pe_x64.exe")
+    result = GhidraRunner(mode="fixture", fixture_root=ROOT / "fixtures").run(
+        ANALYSIS_ID, "hello_pe_x64.exe"
+    )
     assert result["source"] == "fixture"
     normalized = normalize_analysis(
         _static(),
@@ -92,15 +94,26 @@ def test_real_ghidra_output_is_normalized(monkeypatch, tmp_path):
     headless = tmp_path / "analyzeHeadless"
     headless.write_text("", encoding="utf-8")
     exported = {
-        "functions": [{
-            "address": "0x140001000", "name": "main", "signature": "int main(void)", "size": 8,
-            "decompiler_status": "ok", "decompiled_code": "int main(void) { return 0; }",
-            "assembly_excerpt": "0x140001000: RET\n",
-        }, {
-            "address": "0x140001010", "name": "helper", "signature": "void helper(void)", "size": 4,
-            "decompiler_status": "ok", "decompiled_code": "void helper(void) {}",
-            "assembly_excerpt": "0x140001010: RET\n",
-        }],
+        "functions": [
+            {
+                "address": "0x140001000",
+                "name": "main",
+                "signature": "int main(void)",
+                "size": 8,
+                "decompiler_status": "ok",
+                "decompiled_code": "int main(void) { return 0; }",
+                "assembly_excerpt": "0x140001000: RET\n",
+            },
+            {
+                "address": "0x140001010",
+                "name": "helper",
+                "signature": "void helper(void)",
+                "size": 4,
+                "decompiler_status": "ok",
+                "decompiled_code": "void helper(void) {}",
+                "assembly_excerpt": "0x140001010: RET\n",
+            },
+        ],
         "edges": [{"caller": "0x140001000", "callee": "0x140001010", "type": "direct"}],
     }
 
@@ -111,10 +124,15 @@ def test_real_ghidra_output_is_normalized(monkeypatch, tmp_path):
 
     monkeypatch.setattr("worker.ghidra_runner.subprocess.run", run_headless)
     result = GhidraRunner(
-        mode="real", headless_path=headless, timeout_seconds=5,
+        mode="real",
+        headless_path=headless,
+        timeout_seconds=5,
     ).run(ANALYSIS_ID, "uploaded.exe", binary_path=binary, work_dir=tmp_path / "work")
     normalized = normalize_analysis(
-        _static(), ANALYSIS_ID, ghidra_result=result, data_root=str(tmp_path / "data"),
+        _static(),
+        ANALYSIS_ID,
+        ghidra_result=result,
+        data_root=str(tmp_path / "data"),
     )
 
     assert result["source"] == "real"
@@ -122,14 +140,16 @@ def test_real_ghidra_output_is_normalized(monkeypatch, tmp_path):
     assert normalized["decomp_status"] == "OK"
     assert normalized["toolchain"]["ghidra"] == result["toolchain"]["ghidra"]
     assert normalized["functions"][0]["name"] == "main"
-    assert normalized["edges"] == [{
-        "caller": f"{ANALYSIS_ID}:0x140001000",
-        "callee": f"{ANALYSIS_ID}:0x140001010",
-        "type": "direct",
-    }]
-    assert (tmp_path / "data" / "artifacts" / ANALYSIS_ID / "funcs" / "140001000.c").read_text(
-        encoding="utf-8"
-    ) == "int main(void) { return 0; }"
+    assert normalized["edges"] == [
+        {
+            "caller": f"{ANALYSIS_ID}:0x140001000",
+            "callee": f"{ANALYSIS_ID}:0x140001010",
+            "type": "direct",
+        }
+    ]
+    assert (
+        tmp_path / "data" / "artifacts" / ANALYSIS_ID / "funcs" / "140001000.c"
+    ).read_text(encoding="utf-8") == "int main(void) { return 0; }"
 
 
 def test_real_ghidra_timeout_is_reported(monkeypatch, tmp_path):
@@ -143,14 +163,42 @@ def test_real_ghidra_timeout_is_reported(monkeypatch, tmp_path):
 
     monkeypatch.setattr("worker.ghidra_runner.subprocess.run", timeout)
     result = GhidraRunner(
-        mode="real", headless_path=headless, timeout_seconds=1,
+        mode="real",
+        headless_path=headless,
+        timeout_seconds=1,
     ).run(ANALYSIS_ID, "uploaded.exe", binary_path=binary, work_dir=tmp_path / "work")
 
     assert result["source"] == "none"
     assert result["decomp_status"] == "TIMEOUT"
     assert result["functions"] == []
-    normalized = normalize_analysis(_static(), ANALYSIS_ID, ghidra_result=result, data_root=str(tmp_path / "data"))
+    normalized = normalize_analysis(
+        _static(), ANALYSIS_ID, ghidra_result=result, data_root=str(tmp_path / "data")
+    )
     assert normalized["decomp_status"] == "TIMEOUT"
+
+
+def test_real_ghidra_missing_export_includes_bounded_headless_diagnostics(
+    monkeypatch, tmp_path
+):
+    binary = tmp_path / "input.exe"
+    binary.write_bytes(b"MZ")
+    headless = tmp_path / "analyzeHeadless"
+    headless.write_text("", encoding="utf-8")
+
+    def no_export(_command, **kwargs):
+        kwargs["stderr"].write(b"ERROR Export.java: failed to compile\n")
+        return type("Completed", (), {"returncode": 0})()
+
+    monkeypatch.setattr("worker.ghidra_runner.subprocess.run", no_export)
+    runner = GhidraRunner(mode="real", headless_path=headless, timeout_seconds=5)
+
+    with pytest.raises(GhidraExecutionError, match="failed to compile"):
+        runner.run(
+            ANALYSIS_ID,
+            "uploaded.exe",
+            binary_path=binary,
+            work_dir=tmp_path / "work",
+        )
 
 
 def test_partial_result_keeps_static_metadata_and_has_no_fake_functions(tmp_path):
@@ -198,11 +246,16 @@ def test_partial_pipeline_keeps_already_persisted_static_rows():
         )
         session.commit()
     _persist_static_metadata(analysis_id, static)
-    _persist_functions(analysis_id, {
-        "source": "none", "decomp_status": "NOT_RUN",
-        "toolchain": {"ghidra": "NOT_RUN", "jdk": "NOT_RUN"},
-        "functions": [], "edges": [],
-    })
+    _persist_functions(
+        analysis_id,
+        {
+            "source": "none",
+            "decomp_status": "NOT_RUN",
+            "toolchain": {"ghidra": "NOT_RUN", "jdk": "NOT_RUN"},
+            "functions": [],
+            "edges": [],
+        },
+    )
     with new_session() as session:
         analysis = session.get(Analysis, uuid.UUID(analysis_id))
         analysis.status = "PARTIAL"
